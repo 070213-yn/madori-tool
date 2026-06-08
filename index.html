@@ -89,11 +89,31 @@
   #gridCanvas { position: absolute; left: 0; top: 0; pointer-events: none; }
   #calibLayer { position: absolute; left: 0; top: 0; pointer-events: none; }
 
-  .furn { position: absolute; border: 2px solid rgba(70,100,150,.5); border-radius: 12px; cursor: move; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 11px; color: #2c3550; font-weight: 700; user-select: none; box-shadow: 0 4px 14px rgba(70,110,170,.28); overflow: hidden; transition: box-shadow .2s, border-color .2s; backdrop-filter: blur(1px); }
-  .furn .lbl { padding: 2px; line-height: 1.1; pointer-events: none; text-shadow: 0 1px 3px rgba(255,255,255,.9); white-space: pre; }
-  .furn.selected { z-index: 50; border-color: var(--accent) !important; animation: selGlow 1.7s ease-in-out infinite; }
-  @keyframes selGlow{ 0%,100%{ box-shadow:0 0 0 3px rgba(111,168,255,.55), 0 8px 22px rgba(111,168,255,.40); } 50%{ box-shadow:0 0 0 6px rgba(111,168,255,.30), 0 10px 26px rgba(111,168,255,.50); } }
+  .furn { position: absolute; cursor: move; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 11px; color: #2c3550; font-weight: 700; user-select: none; transition: filter .2s; }
+  .furn .fshape { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 4px 10px rgba(70,110,170,.26)); pointer-events: none; }
+  .furn .fshape path { stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .furn .lbl { position: relative; z-index: 1; padding: 2px; line-height: 1.1; pointer-events: none; text-shadow: 0 1px 3px rgba(255,255,255,.92); white-space: pre; }
+  .furn.selected { z-index: 50; }
+  .furn.selected .fshape { filter: drop-shadow(0 0 7px rgba(111,168,255,.95)) drop-shadow(0 6px 14px rgba(111,168,255,.55)); animation: selPulse 1.7s ease-in-out infinite; }
+  @keyframes selPulse{ 0%,100%{ opacity:1; } 50%{ opacity:.82; } }
   .clearZone { position: absolute; pointer-events: none; border: 1.5px dashed rgba(70,110,170,.5); border-radius: 12px; z-index: 1; }
+
+  /* モーダル（家具エディタ） */
+  .modalOverlay { position: fixed; inset: 0; z-index: 900; display: none; align-items: center; justify-content: center;
+    background: rgba(90,130,190,.28); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .modalOverlay.show { display: flex; animation: fadeIn .25s ease both; }
+  .modalCard { width: 360px; max-width: calc(100vw - 28px); max-height: calc(100vh - 28px); overflow-y: auto; padding: 18px;
+    border-radius: 26px; background: var(--glass-strong); backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%);
+    border: 1px solid var(--glass-brd); box-shadow: 0 24px 60px rgba(70,110,180,.35); animation: cardPop .3s cubic-bezier(.2,.85,.25,1) both; }
+  .modalCard h2 { font-size: 16px; font-weight: 800; color: var(--accent-deep); margin-bottom: 12px; }
+  .modalCard .pv { display: flex; justify-content: center; padding: 10px 0 4px; }
+  .modalCard canvas { background: rgba(255,255,255,.7); border-radius: 16px; border: 1px solid var(--glass-brd); }
+  .modalBtns { display: flex; gap: 8px; margin-top: 14px; }
+  .modalBtns button { flex: 1; }
+  .customItem { display: flex; align-items: center; gap: 7px; background: rgba(255,255,255,.55); border: 1px solid var(--glass-brd); border-radius: var(--rad-sm); padding: 6px 8px; margin-top: 6px; font-size: 12px; }
+  .customItem .cnm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .customItem canvas { flex: 0 0 auto; }
+  .customItem button { padding: 4px 9px; font-size: 11px; }
 
   #topbar { position: absolute; top: 12px; left: 12px; z-index: 200; padding: 7px 10px; border-radius: var(--pill);
     background: var(--glass); backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%);
@@ -162,7 +182,12 @@
       <h2>② 家具を追加</h2>
       <div class="row"><select id="furnType"></select></div>
       <button id="btnAdd" class="full">＋ 配置する</button>
-      <div class="hint">追加した家具はドラッグで移動。同じ家具を何個でも追加できます（PCデスクの複数置きOK）。</div>
+      <div class="hint">追加した家具はドラッグで移動。同じ家具を何個でも追加できます。</div>
+      <div style="border-top:1px solid var(--glass-line); margin:10px 0 6px; padding-top:8px;">
+        <button id="btnNewFurn" class="full sub">＋ 家具の種類を作る</button>
+        <div id="customList"></div>
+        <div class="hint">作った種類は保存され、いつでも・別のプランでも追加できます（相手にも同期）。</div>
+      </div>
     </div>
 
     <div class="section" id="propBox" style="display:none;">
@@ -249,6 +274,44 @@
   </div>
 </div>
 
+<!-- 家具エディタ モーダル -->
+<div id="furnModal" class="modalOverlay">
+  <div class="modalCard">
+    <h2 id="fmTitle">家具の種類を作る</h2>
+    <div class="row"><label>名前</label><input type="text" id="fmName" placeholder="例: L字デスク"></div>
+    <div class="row"><label>幅 W(cm)</label><input type="number" id="fmW" value="120" step="1"></div>
+    <div class="row"><label>奥行 D(cm)</label><input type="number" id="fmD" value="60" step="1"></div>
+    <div class="row"><label>色</label><input type="color" id="fmColor" value="#a8e6cf"></div>
+    <div class="row"><label>形</label>
+      <select id="fmShape" style="flex:1;">
+        <option value="rect">四角（角丸）</option>
+        <option value="round">角丸（丸み調整）</option>
+        <option value="oval">円・楕円</option>
+        <option value="semi">半円（片側だけ円）</option>
+        <option value="L">L字</option>
+      </select>
+    </div>
+    <div class="row" id="fmRoundRow"><label>角の丸み</label><input type="number" id="fmCorner" value="14" step="1"><span class="hint" style="margin:0;">cm</span></div>
+    <div class="row" id="fmSemiRow"><label>平らな側</label>
+      <select id="fmSemiDir" style="flex:1;"><option value="bottom">下</option><option value="top">上</option><option value="left">左</option><option value="right">右</option></select>
+    </div>
+    <div id="fmLBox">
+      <div class="row"><label>欠ける角</label>
+        <select id="fmLcorner" style="flex:1;"><option value="tr">右上</option><option value="tl">左上</option><option value="br">右下</option><option value="bl">左下</option></select>
+      </div>
+      <div class="row"><label>欠け 幅</label><input type="number" id="fmLw" value="60" step="1"><span class="hint" style="margin:0;">cm</span></div>
+      <div class="row"><label>欠け 奥行</label><input type="number" id="fmLd" value="30" step="1"><span class="hint" style="margin:0;">cm</span></div>
+    </div>
+    <div class="row"><label style="min-width:auto;"><input type="checkbox" id="fmChair"> 椅子を引くスペースを判定する家具</label></div>
+    <div class="pv"><canvas id="fmPreview" width="220" height="150"></canvas></div>
+    <div class="modalBtns">
+      <button id="fmSave" class="full" style="margin:0;">保存</button>
+      <button id="fmDelete" class="danger" style="display:none;">削除</button>
+      <button id="fmCancel" class="sub">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
@@ -278,6 +341,8 @@ const PRESETS = [
   { key:"desk_l", name:"PCデスク(大)", w:140, d:70, color:"#a8e6cf", chair:true },
   { key:"chair",  name:"椅子", w:45, d:45, color:"#e0e0e0" },
   { key:"table_l",name:"ローテーブル", w:90, d:50, color:"#ffd9a8" },
+  { key:"round_table",name:"丸テーブル", w:90, d:90, color:"#ffd9a8", shape:"oval" },
+  { key:"round_chair",name:"丸椅子", w:40, d:40, color:"#e0e0e0", shape:"oval" },
   { key:"tv",     name:"テレビ台", w:120, d:40, color:"#d0d0d0" },
   { key:"shelf",  name:"棚/収納", w:80, d:40, color:"#d4b89a" },
   { key:"fridge", name:"冷蔵庫", w:60, d:65, color:"#cfe8ff" },
@@ -334,11 +399,78 @@ function labelMetrics(wpx, dpx, angle){
   return { sw, sh, vertical: sh>sw*1.25 };
 }
 
-function initFurnSelect(){
-  const sel=document.getElementById("furnType");
-  PRESETS.forEach(p=>{ const o=document.createElement("option"); o.value=p.key; o.textContent=`${p.name}（${p.w}×${p.d}cm）`; sel.appendChild(o); });
+// ===== 形状（SVGパス）=====
+// cm の形状パラメータを px に変換（ppc = 1cmあたりのpx）
+function shapePxParams(f, ppc){
+  return { cornerPx:(f.cornerR||0)*ppc, semiDir:f.semiDir||"bottom", lcorner:f.lcorner||"tr", nwPx:(f.lw||0)*ppc, ndPx:(f.ld||0)*ppc };
 }
-initFurnSelect();
+// 形状ごとのSVGパス（座標は 0..w, 0..h）
+function svgShapePath(shape, w, h, p){
+  p=p||{}; const f=(n)=>Math.round(n*100)/100;
+  if(shape==="round"){
+    const r=Math.max(0,Math.min(p.cornerPx||0, Math.min(w,h)/2));
+    return `M${f(r)},0 H${f(w-r)} A${f(r)},${f(r)} 0 0 1 ${f(w)},${f(r)} V${f(h-r)} A${f(r)},${f(r)} 0 0 1 ${f(w-r)},${f(h)} H${f(r)} A${f(r)},${f(r)} 0 0 1 0,${f(h-r)} V${f(r)} A${f(r)},${f(r)} 0 0 1 ${f(r)},0 Z`;
+  }
+  if(shape==="oval"){
+    const rx=w/2, ry=h/2;
+    return `M0,${f(ry)} A${f(rx)},${f(ry)} 0 0 1 ${f(w)},${f(ry)} A${f(rx)},${f(ry)} 0 0 1 0,${f(ry)} Z`;
+  }
+  if(shape==="semi"){
+    const dir=p.semiDir||"bottom";
+    if(dir==="bottom") return `M0,${f(h)} A${f(w/2)},${f(h)} 0 0 1 ${f(w)},${f(h)} Z`;
+    if(dir==="top")    return `M0,0 A${f(w/2)},${f(h)} 0 0 0 ${f(w)},0 Z`;
+    if(dir==="left")   return `M0,0 A${f(w)},${f(h/2)} 0 0 1 0,${f(h)} Z`;
+    return `M${f(w)},0 A${f(w)},${f(h/2)} 0 0 0 ${f(w)},${f(h)} Z`; // right
+  }
+  if(shape==="L"){
+    const nw=Math.max(0,Math.min(p.nwPx||0,w)), nd=Math.max(0,Math.min(p.ndPx||0,h)), c=p.lcorner||"tr";
+    if(c==="tl") return `M${f(nw)},0 H${f(w)} V${f(h)} H0 V${f(nd)} H${f(nw)} Z`;
+    if(c==="tr") return `M0,0 H${f(w-nw)} V${f(nd)} H${f(w)} V${f(h)} H0 Z`;
+    if(c==="bl") return `M0,0 H${f(w)} V${f(h)} H${f(nw)} V${f(h-nd)} H0 Z`;
+    return `M0,0 H${f(w)} V${f(h-nd)} H${f(w-nw)} V${f(h)} H0 Z`; // br
+  }
+  // rect（標準）：サイズに応じた控えめな角丸
+  const rr=Math.min(w,h)*0.1;
+  return svgShapePath("round", w, h, {cornerPx:rr});
+}
+function drawFurnPreview(canvas, p, pad){
+  pad=(pad==null?12:pad);
+  const ctx=canvas.getContext("2d"); ctx.clearRect(0,0,canvas.width,canvas.height);
+  const ratio=Math.min((canvas.width-pad*2)/p.w, (canvas.height-pad*2)/p.d);
+  const w=p.w*ratio, h=p.d*ratio, ox=(canvas.width-w)/2, oy=(canvas.height-h)/2;
+  const path=new Path2D(svgShapePath(p.shape||"rect", w, h, shapePxParams(p, ratio)));
+  ctx.save(); ctx.translate(ox,oy);
+  ctx.fillStyle=hexToRgba(p.color||"#cccccc",0.85); ctx.fill(path);
+  ctx.lineWidth=2; ctx.strokeStyle="rgba(70,100,150,.6)"; ctx.stroke(path);
+  ctx.restore();
+}
+
+// ===== 家具の種類カタログ（標準＋自作）=====
+const CUSTOM_KEY="madori_customfurn_v1";
+function getCustom(){ try{ return JSON.parse(localStorage.getItem(CUSTOM_KEY))||[]; }catch(e){ return []; } }
+function setCustom(arr){ localStorage.setItem(CUSTOM_KEY, JSON.stringify(arr)); schedulePush(); }
+function getFurnType(key){ return getCustom().find(p=>p.key===key) || PRESETS.find(p=>p.key===key); }
+function refreshFurnTypeSelect(){
+  const sel=document.getElementById("furnType"); const cur=sel.value; sel.innerHTML="";
+  const g1=document.createElement("optgroup"); g1.label="標準";
+  PRESETS.forEach(p=>{ const o=document.createElement("option"); o.value=p.key; o.textContent=`${p.name}（${p.w}×${p.d}）`; g1.appendChild(o); });
+  sel.appendChild(g1);
+  const cust=getCustom();
+  if(cust.length){ const g2=document.createElement("optgroup"); g2.label="自作"; cust.forEach(p=>{ const o=document.createElement("option"); o.value=p.key; o.textContent=`${p.name}（${p.w}×${p.d}）`; g2.appendChild(o); }); sel.appendChild(g2); }
+  if(cur){ const opt=Array.from(sel.options).find(o=>o.value===cur); if(opt) sel.value=cur; }
+}
+function renderCustomList(){
+  const box=document.getElementById("customList"); if(!box) return; box.innerHTML="";
+  getCustom().forEach(p=>{
+    const row=document.createElement("div"); row.className="customItem";
+    const cv=document.createElement("canvas"); cv.width=36; cv.height=28; drawFurnPreview(cv,p,3); row.appendChild(cv);
+    const nm=document.createElement("span"); nm.className="cnm"; nm.textContent=p.name; row.appendChild(nm);
+    const bE=document.createElement("button"); bE.className="sub"; bE.textContent="編集"; bE.onclick=()=>openFurnModal(p); row.appendChild(bE);
+    const bD=document.createElement("button"); bD.className="danger"; bD.textContent="削除"; bD.onclick=()=>{ if(!confirm(`「${p.name}」を削除しますか？`)) return; setCustom(getCustom().filter(x=>x.key!==p.key)); refreshFurnTypeSelect(); renderCustomList(); }; row.appendChild(bD);
+    box.appendChild(row);
+  });
+}
+refreshFurnTypeSelect(); renderCustomList();
 
 floorImg.onload=()=>{
   imgW=floorImg.naturalWidth; imgH=floorImg.naturalHeight;
@@ -438,24 +570,34 @@ document.getElementById("gridOn").onchange=drawGrid;
 document.getElementById("btnAdd").onclick=()=>{
   const key=document.getElementById("furnType").value;
   if(cmpActive){ addFurnToLayout(cmpActive.layout, key); cmpActive.sel=cmpActive.layout.furns.length-1; drawCard(cmpActive); fillPropPanel(ctxSelFurn()); return; }
-  const p=PRESETS.find(x=>x.key===key);
+  const p=getFurnType(key); if(!p) return;
   const cx=(stageWrap.clientWidth/2 - panX)/zoom;
   const cy=(stageWrap.clientHeight/2 - panY)/zoom;
-  const f={ id:nextId++, name:p.name, w:p.w, d:p.d, angle:0, color:p.color,
-    xCm:cx*scaleCmPerPx, yCm:cy*scaleCmPerPx, chair:!!p.chair, chairDir:"front", chairDepth:70 };
+  const f=furnFromType(p, cx*scaleCmPerPx, cy*scaleCmPerPx); f.id=nextId++;
   furns.push(f); renderFurn(f); select(f.id); refreshOverlap();
 };
+function furnFromType(p, xCm, yCm){
+  return { name:p.name, w:p.w, d:p.d, angle:0, color:p.color, xCm, yCm,
+    shape:p.shape||"rect", cornerR:p.cornerR||0, semiDir:p.semiDir||"bottom",
+    lcorner:p.lcorner||"tr", lw:p.lw||0, ld:p.ld||0,
+    chair:!!p.chair, chairDir:"front", chairDepth:70 };
+}
 
 // 家具DOM
 function renderFurn(f){
   let el=document.getElementById("furn_"+f.id);
   if(!el){
     el=document.createElement("div"); el.className="furn"; el.id="furn_"+f.id;
-    el.innerHTML=`<span class="lbl"></span>`; stage.appendChild(el);
+    el.innerHTML=`<svg class="fshape" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><path></path></svg><span class="lbl"></span>`; stage.appendChild(el);
     const cz=document.createElement("div"); cz.className="clearZone"; cz.id="cz_"+f.id; cz.style.display="none"; stage.appendChild(cz);
     makeDraggable(el,f);
   }
   layoutFurn(f);
+}
+function furnStrokeColor(f, overlapping){
+  if(overlapping) return "#ff2d2d";
+  if(!cmpActive && f.id===selectedId) return "#ff7a1a";
+  return "rgba(70,100,150,.62)";
 }
 function layoutFurn(f){
   const el=document.getElementById("furn_"+f.id); if(!el) return;
@@ -463,7 +605,12 @@ function layoutFurn(f){
   el.style.width=wpx+"px"; el.style.height=dpx+"px";
   el.style.left=(x-wpx/2)+"px"; el.style.top=(y-dpx/2)+"px";
   el.style.transform=`rotate(${f.angle}deg)`;
-  el.style.background=hexToRgba(f.color,0.80);
+  // 形状（SVG）
+  const svg=el.querySelector(".fshape"), path=svg.querySelector("path");
+  svg.setAttribute("viewBox",`0 0 ${wpx} ${dpx}`);
+  path.setAttribute("d", svgShapePath(f.shape||"rect", wpx, dpx, shapePxParams(f, pxPerCm())));
+  path.setAttribute("fill", hexToRgba(f.color,0.82));
+  path.setAttribute("stroke", furnStrokeColor(f,false));
   const lbl=el.querySelector(".lbl");
   lbl.textContent=f.name;
   lbl.style.transform=`rotate(${-f.angle}deg)`; // 文字は常に水平に
@@ -602,7 +749,7 @@ function refreshOverlap(){
   let cnt=0; const ov=new Set();
   for(let i=0;i<furns.length;i++) for(let j=i+1;j<furns.length;j++)
     if(overlapSAT(furnOverlapCorners(furns[i]),furnOverlapCorners(furns[j]))){ ov.add(furns[i].id); ov.add(furns[j].id); cnt++; }
-  furns.forEach(f=>{ const el=document.getElementById("furn_"+f.id); if(el) el.style.borderColor=ov.has(f.id)?"#ff2d2d":"rgba(0,0,0,.55)"; });
+  furns.forEach(f=>{ const el=document.getElementById("furn_"+f.id); const pth=el&&el.querySelector(".fshape path"); if(pth) pth.setAttribute("stroke", furnStrokeColor(f, ov.has(f.id))); });
   document.getElementById("overlapInfo").innerHTML=cnt?`<span class="warn">重なり: ${cnt}組</span>`:`<span class="ok">重なり: なし</span>`;
   furns.filter(f=>f.chair).forEach(f=>{
     const zone=chairZoneCorners(f); let blocked=false;
@@ -719,11 +866,14 @@ function drawCard(item){
   fs.forEach((f,idx)=>{
     const cx=(f.xCm/sc)*s, cy=(f.yCm/sc)*s, w=(f.w/sc)*s, h=(f.d/sc)*s;
     ctx.save(); ctx.translate(cx,cy); ctx.rotate((f.angle||0)*Math.PI/180);
-    ctx.fillStyle=hexToRgba(f.color,0.8); ctx.fillRect(-w/2,-h/2,w,h);
+    const path=new Path2D(svgShapePath(f.shape||"rect", w, h, shapePxParams(f, s/sc)));
     const seld = isActive && idx===item.sel;
+    ctx.save(); ctx.translate(-w/2,-h/2);
+    ctx.fillStyle=hexToRgba(f.color,0.82); ctx.fill(path);
     ctx.lineWidth = seld?3:1.2;
-    ctx.strokeStyle = seld?"#ff7a1a":(ov.has(idx)?"#ff2d2d":"rgba(0,0,0,.6)");
-    ctx.strokeRect(-w/2,-h/2,w,h);
+    ctx.strokeStyle = seld?"#ff7a1a":(ov.has(idx)?"#ff2d2d":"rgba(70,100,150,.6)");
+    ctx.stroke(path);
+    ctx.restore();
     ctx.rotate(-(f.angle||0)*Math.PI/180); // 文字は常に水平に
     const m=labelMetrics(w,h,f.angle);
     const fp=fitFontPx(f.name, m.sw, m.sh, m.vertical);
@@ -800,9 +950,9 @@ function buildCard(it){
   return card;
 }
 function addFurnToLayout(layout, key){
-  const p=PRESETS.find(x=>x.key===key); const sc=layout.scaleCmPerPx||0.70;
+  const p=getFurnType(key); if(!p) return; const sc=layout.scaleCmPerPx||0.70;
   if(!layout.furns) layout.furns=[];
-  layout.furns.push({ name:p.name, w:p.w, d:p.d, angle:0, color:p.color, xCm:(imgW*sc)/2, yCm:(imgH*sc)/2, chair:!!p.chair, chairDir:"front", chairDepth:70 });
+  layout.furns.push(furnFromType(p, (imgW*sc)/2, (imgH*sc)/2));
 }
 function openCompare(){
   const grid=document.getElementById("compareGrid"); grid.innerHTML="";
@@ -827,6 +977,72 @@ document.getElementById("cmpSize").oninput=()=>{ const dispW=parseInt(document.g
 
 document.getElementById("btnClear").onclick=()=>{ if(!confirm("全ての家具を消します。よろしいですか？")) return; furns.forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); }); furns=[]; selectedId=null; document.getElementById("propBox").style.display="none"; refreshOverlap(); };
 
+// ===== 家具エディタ（モーダル）=====
+let fmEditingKey=null;
+function fmShapeUI(){
+  const sh=document.getElementById("fmShape").value;
+  document.getElementById("fmRoundRow").style.display=(sh==="round")?"flex":"none";
+  document.getElementById("fmSemiRow").style.display=(sh==="semi")?"flex":"none";
+  document.getElementById("fmLBox").style.display=(sh==="L")?"block":"none";
+  fmPreview();
+}
+function fmReadForm(){
+  return {
+    name: document.getElementById("fmName").value.trim()||"家具",
+    w: Math.max(1, parseFloat(document.getElementById("fmW").value)||60),
+    d: Math.max(1, parseFloat(document.getElementById("fmD").value)||60),
+    color: document.getElementById("fmColor").value,
+    shape: document.getElementById("fmShape").value,
+    cornerR: parseFloat(document.getElementById("fmCorner").value)||0,
+    semiDir: document.getElementById("fmSemiDir").value,
+    lcorner: document.getElementById("fmLcorner").value,
+    lw: parseFloat(document.getElementById("fmLw").value)||0,
+    ld: parseFloat(document.getElementById("fmLd").value)||0,
+    chair: document.getElementById("fmChair").checked
+  };
+}
+function fmPreview(){ drawFurnPreview(document.getElementById("fmPreview"), fmReadForm(), 18); }
+function openFurnModal(preset){
+  fmEditingKey=preset?preset.key:null;
+  document.getElementById("fmTitle").textContent=preset?"家具の種類を編集":"家具の種類を作る";
+  const p=preset||{ name:"", w:120, d:60, color:"#a8e6cf", shape:"rect", cornerR:14, semiDir:"bottom", lcorner:"tr", lw:60, ld:30, chair:false };
+  document.getElementById("fmName").value=p.name||"";
+  document.getElementById("fmW").value=p.w||120;
+  document.getElementById("fmD").value=p.d||60;
+  document.getElementById("fmColor").value=p.color||"#a8e6cf";
+  document.getElementById("fmShape").value=p.shape||"rect";
+  document.getElementById("fmCorner").value=(p.cornerR!=null?p.cornerR:14);
+  document.getElementById("fmSemiDir").value=p.semiDir||"bottom";
+  document.getElementById("fmLcorner").value=p.lcorner||"tr";
+  document.getElementById("fmLw").value=(p.lw!=null?p.lw:60);
+  document.getElementById("fmLd").value=(p.ld!=null?p.ld:30);
+  document.getElementById("fmChair").checked=!!p.chair;
+  document.getElementById("fmDelete").style.display=preset?"block":"none";
+  document.getElementById("furnModal").classList.add("show");
+  fmShapeUI();
+}
+function closeFurnModal(){ document.getElementById("furnModal").classList.remove("show"); }
+document.getElementById("btnNewFurn").onclick=()=>openFurnModal(null);
+document.getElementById("fmShape").onchange=fmShapeUI;
+["fmName","fmW","fmD","fmColor","fmCorner","fmSemiDir","fmLcorner","fmLw","fmLd"].forEach(id=>{
+  const el=document.getElementById(id); el.addEventListener("input",fmPreview); el.addEventListener("change",fmPreview);
+});
+document.getElementById("fmChair").addEventListener("change",fmPreview);
+document.getElementById("fmCancel").onclick=closeFurnModal;
+document.getElementById("fmSave").onclick=()=>{
+  const data=fmReadForm(); const cust=getCustom();
+  if(fmEditingKey){ const i=cust.findIndex(x=>x.key===fmEditingKey); if(i>=0) cust[i]={...cust[i],...data}; }
+  else { data.key="c"+Date.now(); cust.push(data); }
+  setCustom(cust); refreshFurnTypeSelect(); renderCustomList();
+  if(!fmEditingKey){ const sel=document.getElementById("furnType"); const opt=Array.from(sel.options).find(o=>o.value===data.key); if(opt) sel.value=data.key; }
+  closeFurnModal();
+};
+document.getElementById("fmDelete").onclick=()=>{
+  if(!fmEditingKey) return; if(!confirm("この種類を削除しますか？")) return;
+  setCustom(getCustom().filter(x=>x.key!==fmEditingKey)); refreshFurnTypeSelect(); renderCustomList(); closeFurnModal();
+};
+document.getElementById("furnModal").addEventListener("mousedown",(e)=>{ if(e.target.id==="furnModal") closeFurnModal(); });
+
 // 何もないところ（家具以外）を左クリックで選択解除
 stageWrap.addEventListener("mousedown",(e)=>{
   if(e.button!==0) return;
@@ -839,7 +1055,7 @@ stageWrap.addEventListener("mousedown",(e)=>{
 // ===== リアルタイム共有（Firebase Realtime Database）=====
 var fbDb=null, fbRoomRef=null, fbReady=false, gotFirst=false;
 var applyingRemote=false, draggingNow=false, pendingRemote=null;
-var lastSyncJson=null, lastWorkingJson=null, lastSlotsJson=null, _pushTimer=null;
+var lastSyncJson=null, lastWorkingJson=null, lastSlotsJson=null, lastCustomJson=null, _pushTimer=null;
 
 function setSyncStatus(t){ const e=document.getElementById("syncStatus"); if(e) e.textContent=t; }
 function cmpShown(){ return document.getElementById("compareView").classList.contains("show"); }
@@ -849,13 +1065,13 @@ function getRoomId(){ const u=new URL(location.href); return (u.searchParams.get
 function syncSanitize(){
   const w=currentLayoutObj();
   (w.furns||[]).forEach(f=>{ delete f._chairBlocked; });
-  return { working:w, slots:getSlots() };
+  return { working:w, slots:getSlots(), customFurn:getCustom() };
 }
 function syncPush(){
   if(!fbRoomRef || applyingRemote) return;
   const st=syncSanitize(); const json=JSON.stringify(st);
   if(json===lastSyncJson) return;
-  lastSyncJson=json; lastWorkingJson=JSON.stringify(st.working); lastSlotsJson=JSON.stringify(st.slots);
+  lastSyncJson=json; lastWorkingJson=JSON.stringify(st.working); lastSlotsJson=JSON.stringify(st.slots); lastCustomJson=JSON.stringify(st.customFurn||[]);
   setSyncStatus("同期しました ✓");
   fbRoomRef.set({ json, at: firebase.database.ServerValue.TIMESTAMP }).catch(()=>setSyncStatus("送信失敗"));
 }
@@ -875,6 +1091,8 @@ function applyWorking(w){
 }
 function applyRemoteFull(st){
   applyingRemote=true;
+  const cj=JSON.stringify(st.customFurn||[]);
+  if(cj!==lastCustomJson){ lastCustomJson=cj; localStorage.setItem(CUSTOM_KEY, cj); refreshFurnTypeSelect(); renderCustomList(); }
   const sj=JSON.stringify(st.slots||{});
   if(sj!==lastSlotsJson){ lastSlotsJson=sj; localStorage.setItem(SLOTS_KEY, sj); renderSlotList(); if(cmpShown()) openCompare(); }
   const wj=JSON.stringify(st.working||{});
