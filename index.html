@@ -378,6 +378,19 @@ stageWrap.addEventListener("wheel",(e)=>{
   stageWrap.scrollTop=contentY*zoom-cy;
 },{passive:false});
 
+// ホイール（中）ボタン ドラッグでキャンバス全体を移動
+stageWrap.addEventListener("mousedown",(e)=>{
+  if(e.button!==1) return;            // 中ボタンのみ
+  e.preventDefault();
+  const sx=e.clientX, sy=e.clientY, ol=stageWrap.scrollLeft, ot=stageWrap.scrollTop;
+  const prevCursor=stageWrap.style.cursor; stageWrap.style.cursor="grabbing";
+  function mv(ev){ stageWrap.scrollLeft=ol-(ev.clientX-sx); stageWrap.scrollTop=ot-(ev.clientY-sy); }
+  function up(){ stageWrap.style.cursor=prevCursor; document.removeEventListener("mousemove",mv); document.removeEventListener("mouseup",up); }
+  document.addEventListener("mousemove",mv); document.addEventListener("mouseup",up);
+});
+// 中クリックのオートスクロール（Windows）を抑制
+stageWrap.addEventListener("auxclick",(e)=>{ if(e.button===1) e.preventDefault(); });
+
 // 実寸キャリブレーション
 let calibMode=false, calibPts=[];
 document.getElementById("btnCalib").onclick=()=>{ calibMode=true; calibPts=[]; clearCalibLayer(); document.getElementById("btnCalib").textContent="1点目をクリック..."; };
@@ -454,9 +467,10 @@ function layoutFurn(f){
   const m=labelMetrics(wpx,dpx,f.angle);
   const fs=fitFontPx(f.name, m.sw, m.sh, m.vertical);
   lbl.style.fontSize=fs+"px";
-  lbl.style.lineHeight="1.05";
+  lbl.style.lineHeight=m.vertical?"1.0":"1.05";
   lbl.style.writingMode=m.vertical?"vertical-rl":"horizontal-tb";
-  lbl.style.textOrientation=m.vertical?"upright":"mixed";
+  lbl.style.textOrientation="mixed";              // 日本語は立て、英字・カッコは横に倒す（自然な縦組み）
+  lbl.style.letterSpacing=m.vertical?"0.04em":"normal";
   lbl.style.whiteSpace="nowrap";
   el.classList.toggle("selected",f.id===selectedId);
   layoutChairZone(f);
@@ -482,6 +496,7 @@ function hexToRgba(hex,a){ hex=hex.replace("#",""); if(hex.length===3) hex=hex.s
 // ドラッグ移動
 function makeDraggable(el,f){
   el.addEventListener("mousedown",(e)=>{
+    if(e.button!==0) return;  // 左ボタンのみ（中ボタンは移動用）
     if(calibMode) return; e.preventDefault(); select(f.id);
     draggingNow=true;
     const sx=e.clientX, sy=e.clientY, ox=f.xCm, oy=f.yCm;
@@ -712,8 +727,13 @@ function drawCard(item){
     ctx.fillStyle="#111"; ctx.font=`bold ${fp}px Meiryo,sans-serif`;
     ctx.textAlign="center"; ctx.textBaseline="middle";
     if(m.vertical){
-      const chars=[...(f.name||"")]; const lh=fp*1.05; const startY=-(chars.length-1)*lh/2;
-      chars.forEach((ch,i)=>ctx.fillText(ch,0,startY+i*lh));
+      const chars=[...(f.name||"")]; const lh=fp*1.02; const startY=-(chars.length-1)*lh/2;
+      const ROT=/[A-Za-z0-9()\[\]{}（）［］｛｝<>＜＞ー－—–―‐~〜\-]/; // 横倒しにする文字
+      chars.forEach((ch,i)=>{
+        const y=startY+i*lh;
+        if(ROT.test(ch)){ ctx.save(); ctx.translate(0,y); ctx.rotate(Math.PI/2); ctx.fillText(ch,0,0); ctx.restore(); }
+        else ctx.fillText(ch,0,y);
+      });
     } else { ctx.fillText(f.name,0,0); }
     ctx.restore();
   });
@@ -752,6 +772,7 @@ function buildCard(it){
 
   // キャンバス操作（家具の選択・ドラッグ）
   cv.addEventListener("mousedown",(e)=>{
+    if(e.button!==0) return;  // 左ボタンのみ
     e.preventDefault();
     if(cmpActive!==it) setActiveCard(it);
     const rect=cv.getBoundingClientRect(); const s=it.dispW/imgW, sc=it.layout.scaleCmPerPx||0.70;
@@ -805,6 +826,7 @@ document.getElementById("btnClear").onclick=()=>{ if(!confirm("全ての家具�
 
 // 空クリックで選択解除
 stage.addEventListener("mousedown",(e)=>{
+  if(e.button!==0) return;
   if(e.target===stage||e.target===floorImg||e.target===gridCanvas){
     selectedId=null; furns.forEach(f=>document.getElementById("furn_"+f.id)?.classList.remove("selected"));
     document.getElementById("propBox").style.display="none";
