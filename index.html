@@ -233,7 +233,8 @@
     <div class="section">
       <h2>⑤ 全体</h2>
       <div class="row"><label style="min-width:auto;"><input type="checkbox" id="gridOn"> グリッド(50cm)</label></div>
-      <div class="hint">マウスのホイールで拡大・縮小できます（カーソル位置中心）。</div>
+      <div class="row"><label style="min-width:auto;"><input type="checkbox" id="bgNoText"> 帖の文字を隠す（文字なし背景）</label></div>
+      <div class="hint">マウスのホイールで拡大・縮小できます（カーソル位置中心）。中ボタンドラッグで移動。</div>
       <button id="btnClear" class="full danger" style="margin-top:6px;">全家具をクリア</button>
     </div>
 
@@ -358,6 +359,7 @@ let nextId = 1;
 let zoom = 1;
 let panX = 0, panY = 0;   // キャンバスの表示位置オフセット
 let imgW = 0, imgH = 0;
+let booted = false;     // 起動処理が一度終わったか（背景切替時の再起動防止）
 let cmpActive = null;   // 比較ビューで編集中のカード（null=メイン編集）
 
 const stage = document.getElementById("stage");
@@ -474,6 +476,7 @@ try{ refreshFurnTypeSelect(); renderCustomList(); }catch(err){ console.error("�
 
 floorImg.onload=()=>{
  try{
+  if(booted) return;   // 背景画像の切替時は再起動しない（ズーム・家具を維持）
   imgW=floorImg.naturalWidth; imgH=floorImg.naturalHeight;
   stage.style.width=imgW+"px"; stage.style.height=imgH+"px";
   floorImg.style.width=imgW+"px"; floorImg.style.height=imgH+"px";
@@ -488,9 +491,23 @@ floorImg.onload=()=>{
   if(localStorage.getItem(LS_KEY)) loadLayout(true);
   document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2);
   updateScaleInfo(); drawGrid(); renderSlotList();
+  booted=true; applyBgMode();
  }catch(err){ console.error("起動処理でエラー:", err); }
 };
 if(floorImg.complete && floorImg.naturalWidth) floorImg.onload();
+
+// 背景画像（帖の文字あり／なし）の切替
+const BG_TEXT="floorplan.png", BG_NOTEXT="floorplan_notext.png";
+function applyBgMode(){
+  const noText=localStorage.getItem("madori_bgmode")==="notext";
+  const cb=document.getElementById("bgNoText"); if(cb) cb.checked=noText;
+  const want=noText?BG_NOTEXT:BG_TEXT;
+  if(!floorImg.getAttribute("src").endsWith(want)) floorImg.src=want;
+}
+document.getElementById("bgNoText").onchange=(e)=>{
+  localStorage.setItem("madori_bgmode", e.target.checked?"notext":"text");
+  floorImg.src = e.target.checked?BG_NOTEXT:BG_TEXT;
+};
 
 // ズーム＆移動（位置オフセット方式：どんな倍率でも自由に動かせる）
 function applyZoom(){
