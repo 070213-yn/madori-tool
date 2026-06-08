@@ -831,8 +831,13 @@ function loadLayout(silent){
 const SLOTS_KEY="madori_slots_v1", CURPLAN_KEY="madori_current_plan";
 let currentPlanName = localStorage.getItem(CURPLAN_KEY) || null;
 function getSlots(){ try{ return JSON.parse(localStorage.getItem(SLOTS_KEY))||{}; }catch(e){ return {}; } }
-function setSlots(s){ localStorage.setItem(SLOTS_KEY, JSON.stringify(s)); schedulePush(); }
-function writeSlotsLocal(s){ localStorage.setItem(SLOTS_KEY, JSON.stringify(s)); }   // 同期トリガーなし
+// 削除直後に同期で復活しないようにする保護（15秒）
+const _deletedPlans={};
+function markDeleted(nm){ _deletedPlans[nm]=Date.now()+15000; }
+function pruneDeleted(slots){ const now=Date.now(); for(const k in _deletedPlans){ if(_deletedPlans[k]>now){ delete slots[k]; } else { delete _deletedPlans[k]; } } return slots; }
+function clearDeletedFor(s){ for(const k in s){ delete _deletedPlans[k]; } } // 再作成された名前は保護解除
+function setSlots(s){ clearDeletedFor(s); localStorage.setItem(SLOTS_KEY, JSON.stringify(s)); schedulePush(); }
+function writeSlotsLocal(s){ clearDeletedFor(s); localStorage.setItem(SLOTS_KEY, JSON.stringify(s)); }   // 同期トリガーなし
 function updateCurPlanUI(){ const el=document.getElementById("curPlanName"); if(el) el.textContent=currentPlanName||"未設定"; }
 function setCurrentPlan(name){
   currentPlanName=name||null;
@@ -882,9 +887,19 @@ function duplicateSlot(nm){
 function saveLayoutToSlot(nm, layout){ const slots=getSlots(); slots[nm]={ scaleCmPerPx:layout.scaleCmPerPx, furns:JSON.parse(JSON.stringify(layout.furns)), nextId:layout.nextId||1, calibCm:layout.calibCm, savedAt:new Date().toLocaleString() }; setSlots(slots); renderSlotList(); }
 function deleteSlot(nm){
   if(!confirm(`「${nm}」を削除しますか？`)) return;
-  const slots=getSlots(); delete slots[nm]; setSlots(slots);
+  markDeleted(nm);
+  const slots=getSlots(); delete slots[nm]; writeSlotsLocal(slots);
   if(currentPlanName===nm) setCurrentPlan(null);
-  renderSlotList();
+  renderSlotList(); syncPush();   // 即同期して削除を確定
+  document.getElementById("saveInfo").textContent=`「${nm}」を削除しました`;
+}
+// 今の配置でこのプランを上書き（以降そのプランへ自動保存）
+function overwriteSlot(nm){
+  if(!confirm(`「${nm}」を、今の配置で上書きしますか？`)) return;
+  const slots=getSlots();
+  slots[nm]={ ...currentLayoutObj(), savedAt:new Date().toLocaleString() };
+  writeSlotsLocal(slots); setCurrentPlan(nm); renderSlotList(); syncPush();
+  document.getElementById("saveInfo").textContent=`「${nm}」を上書きしました（以降そのプランへ自動保存）`;
 }
 function renderSlotList(){
   const box=document.getElementById("slotList"); box.innerHTML="";
@@ -898,9 +913,10 @@ function renderSlotList(){
     nmEl.appendChild(dt); row.appendChild(nmEl);
     const btns=document.createElement("div"); btns.className="btns";
     const bL=document.createElement("button"); bL.textContent=isCur?"編集中":"開く"; bL.disabled=isCur; if(!isCur) bL.onclick=()=>loadSlot(nm);
+    const bO=document.createElement("button"); bO.className="sub"; bO.textContent="上書き"; bO.title="今の配置でこのプランを上書き"; bO.onclick=()=>overwriteSlot(nm);
     const bC=document.createElement("button"); bC.className="sub"; bC.textContent="複製"; bC.onclick=()=>duplicateSlot(nm);
     const bD=document.createElement("button"); bD.className="danger"; bD.textContent="削除"; bD.onclick=()=>deleteSlot(nm);
-    btns.append(bL,bC,bD); row.appendChild(btns); box.appendChild(row);
+    btns.append(bL,bO,bC,bD); row.appendChild(btns); box.appendChild(row);
   });
 }
 function saveNow(){
@@ -1177,7 +1193,8 @@ function applyRemoteFull(st){
     if(cj!==lastCustomJson){ lastCustomJson=cj; localStorage.setItem(CUSTOM_KEY, cj); refreshFurnTypeSelect(); renderCustomList(); }
     const cp=st.currentPlan||null;
     if(cp!==currentPlanName){ currentPlanName=cp; if(cp) localStorage.setItem(CURPLAN_KEY,cp); else localStorage.removeItem(CURPLAN_KEY); updateCurPlanUI(); renderSlotList(); }
-    const sj=JSON.stringify(st.slots||{});
+    const remoteSlots=pruneDeleted(st.slots||{});   // 最近削除したプランは復活させない
+    const sj=JSON.stringify(remoteSlots);
     if(sj!==lastSlotsJson){ lastSlotsJson=sj; localStorage.setItem(SLOTS_KEY, sj); renderSlotList(); if(cmpShown()) openCompare(); }
     const wj=JSON.stringify(st.working||{});
     if(wj!==lastWorkingJson){ lastWorkingJson=wj; applyWorking(st.working); }
