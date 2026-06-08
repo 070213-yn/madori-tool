@@ -132,6 +132,9 @@
   .slotItem .btns { display: flex; gap: 5px; flex-wrap: wrap; }
   .slotItem .btns button { padding: 5px 11px; font-size: 11px; }
   .slotItem .dt { font-size: 10px; color: var(--ink-faint); font-weight:500; }
+  .slotItem.current { background: rgba(111,168,255,.18); border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); }
+  .slotItem button:disabled { opacity:.55; cursor:default; }
+  #curPlanName { color: var(--accent-deep); }
 
   /* 比較ビュー */
   #compareView { position: absolute; inset: 0; z-index: 500; display: none; flex-direction: column; border-radius: var(--rad); overflow:hidden;
@@ -221,13 +224,13 @@
     </div>
 
     <div class="section">
-      <h2>④ プランの保存・比較</h2>
-      <div class="hint">今の配置に名前を付けて保存できます。何案でも保存して、並べて見比べられます。</div>
-      <div class="row" style="margin-top:8px;"><input type="text" id="slotName" placeholder="プラン名（例：案A）"></div>
-      <button id="btnSaveSlot" class="full">名前を付けて保存</button>
+      <h2>④ プラン（自動保存）</h2>
+      <div class="row"><span class="badge">現在のプラン: <b id="curPlanName">未設定</b></span></div>
+      <button id="btnNewPlan" class="full">＋ 新しいプランを作る</button>
+      <button id="btnNamePlan" class="full sub" style="margin-top:6px;">今の配置に名前を付ける</button>
       <div id="slotList"></div>
       <button id="btnCompare" class="full sub" style="margin-top:10px;">▦ 並べて比較する</button>
-      <div class="hint" id="saveInfo"></div>
+      <div class="hint" id="saveInfo">名前を決めると、以降の変更は自動で保存されます。</div>
     </div>
 
     <div class="section">
@@ -817,27 +820,56 @@ function loadFromObj(d){
 // ----- 作業状態の自動保存（リロードで復元）-----
 function saveWorking(){ localStorage.setItem(LS_KEY, JSON.stringify(currentLayoutObj())); }
 var _saveTimer=null, remoteApplyAt=0;
-function scheduleSaveWorking(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>{ saveWorking(); if(Date.now()-remoteApplyAt>1200) syncPush(); },400); }
+function scheduleSaveWorking(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>{ saveWorking(); autoSaveToCurrentPlan(); if(Date.now()-remoteApplyAt>1200) syncPush(); },400); }
 function loadLayout(silent){
   const raw=localStorage.getItem(LS_KEY); if(!raw){ if(!silent) alert("保存データがありません"); return; }
   loadFromObj(JSON.parse(raw));
 }
 
-// ----- 名前付きスロット（複数プラン保存）-----
-const SLOTS_KEY="madori_slots_v1";
+// ----- 名前付きプラン（常時オートセーブ）-----
+const SLOTS_KEY="madori_slots_v1", CURPLAN_KEY="madori_current_plan";
+let currentPlanName = localStorage.getItem(CURPLAN_KEY) || null;
 function getSlots(){ try{ return JSON.parse(localStorage.getItem(SLOTS_KEY))||{}; }catch(e){ return {}; } }
 function setSlots(s){ localStorage.setItem(SLOTS_KEY, JSON.stringify(s)); schedulePush(); }
-function saveSlot(){
-  const nm=document.getElementById("slotName").value.trim();
-  if(!nm){ alert("プラン名を入力してください"); return; }
-  const slots=getSlots();
-  if(slots[nm] && !confirm(`「${nm}」を上書きしますか？`)) return;
-  slots[nm]={ ...currentLayoutObj(), savedAt:new Date().toLocaleString() };
-  setSlots(slots); renderSlotList();
-  document.getElementById("saveInfo").textContent=`「${nm}」を保存しました`;
+function writeSlotsLocal(s){ localStorage.setItem(SLOTS_KEY, JSON.stringify(s)); }   // 同期トリガーなし
+function updateCurPlanUI(){ const el=document.getElementById("curPlanName"); if(el) el.textContent=currentPlanName||"未設定"; }
+function setCurrentPlan(name){
+  currentPlanName=name||null;
+  if(name) localStorage.setItem(CURPLAN_KEY, name); else localStorage.removeItem(CURPLAN_KEY);
+  updateCurPlanUI(); renderSlotList();
+  if(typeof schedulePush==="function" && !applyingRemote) schedulePush();
 }
-function loadSlot(nm){ const slots=getSlots(); if(!slots[nm]) return; loadFromObj(slots[nm]); saveWorking(); document.getElementById("slotName").value=nm; document.getElementById("saveInfo").textContent=`「${nm}」を読み込みました`; }
-function updateSlot(nm){ const slots=getSlots(); if(!slots[nm]) return; slots[nm]={ ...currentLayoutObj(), savedAt:new Date().toLocaleString() }; setSlots(slots); renderSlotList(); document.getElementById("saveInfo").textContent=`「${nm}」を更新しました`; }
+// 現在プランへ即保存（オートセーブの実体）
+function autoSaveToCurrentPlan(){
+  if(!currentPlanName) return;
+  const slots=getSlots();
+  slots[currentPlanName]={ ...currentLayoutObj(), savedAt:new Date().toLocaleString() };
+  writeSlotsLocal(slots); renderSlotList();
+}
+// 新しいプランを作る（先に名前 → 空から開始 → 以降オートセーブ）
+function newPlan(){
+  if(!currentPlanName && furns.length){ if(!confirm("今の配置は名前を付けていないため、新規作成すると消えます。よろしいですか？")) return; }
+  const nm=(prompt("新しいプラン名を入力してください")||"").trim();
+  if(!nm) return;
+  const slots=getSlots();
+  if(slots[nm]){ if(confirm(`「${nm}」は既にあります。そのプランを開きますか？`)) loadSlot(nm); return; }
+  furns.forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); });
+  furns=[]; selectedId=null; document.getElementById("propBox").style.display="none";
+  setCurrentPlan(nm); autoSaveToCurrentPlan(); refreshOverlap();
+  document.getElementById("saveInfo").textContent=`「${nm}」を作成（以降は自動保存）`;
+}
+// 今の配置に名前を付ける（名前未設定の作業を命名）
+function namePlan(){
+  const nm=(prompt("このプランの名前", currentPlanName||"")||"").trim();
+  if(!nm) return;
+  setCurrentPlan(nm); autoSaveToCurrentPlan();
+  document.getElementById("saveInfo").textContent=`「${nm}」として自動保存します`;
+}
+function loadSlot(nm){
+  const slots=getSlots(); if(!slots[nm]) return;
+  loadFromObj(slots[nm]); setCurrentPlan(nm); saveWorking();
+  document.getElementById("saveInfo").textContent=`「${nm}」を開きました（自動保存）`;
+}
 function duplicateSlot(nm){
   const slots=getSlots(); if(!slots[nm]) return;
   let base=nm+" のコピー", newNm=base, i=2;
@@ -846,29 +878,33 @@ function duplicateSlot(nm){
   setSlots(slots); renderSlotList();
   document.getElementById("saveInfo").textContent=`「${newNm}」を作成しました`;
 }
-// 任意のレイアウトオブジェクトでスロットを上書き（比較ビューの編集保存用）
 function saveLayoutToSlot(nm, layout){ const slots=getSlots(); slots[nm]={ scaleCmPerPx:layout.scaleCmPerPx, furns:JSON.parse(JSON.stringify(layout.furns)), nextId:layout.nextId||1, calibCm:layout.calibCm, savedAt:new Date().toLocaleString() }; setSlots(slots); renderSlotList(); }
-function deleteSlot(nm){ if(!confirm(`「${nm}」を削除しますか？`)) return; const slots=getSlots(); delete slots[nm]; setSlots(slots); renderSlotList(); }
+function deleteSlot(nm){
+  if(!confirm(`「${nm}」を削除しますか？`)) return;
+  const slots=getSlots(); delete slots[nm]; setSlots(slots);
+  if(currentPlanName===nm) setCurrentPlan(null);
+  renderSlotList();
+}
 function renderSlotList(){
   const box=document.getElementById("slotList"); box.innerHTML="";
   const slots=getSlots(); const names=Object.keys(slots);
-  if(!names.length){ box.innerHTML=`<div class="hint">保存したプランはまだありません。</div>`; return; }
+  if(!names.length){ box.innerHTML=`<div class="hint">プランはまだありません。「＋ 新しいプランを作る」から作成してください。</div>`; return; }
   names.forEach(nm=>{
-    const cnt=(slots[nm].furns||[]).length;
-    const row=document.createElement("div"); row.className="slotItem";
-    const nmEl=document.createElement("span"); nmEl.className="nm";
-    nmEl.textContent=nm;                       // textContentで安全に挿入
+    const cnt=(slots[nm].furns||[]).length, isCur=(nm===currentPlanName);
+    const row=document.createElement("div"); row.className="slotItem"+(isCur?" current":"");
+    const nmEl=document.createElement("span"); nmEl.className="nm"; nmEl.textContent=(isCur?"● ":"")+nm;
     const dt=document.createElement("span"); dt.className="dt"; dt.textContent=` (${cnt}点)`;
     nmEl.appendChild(dt); row.appendChild(nmEl);
     const btns=document.createElement("div"); btns.className="btns";
-    const bL=document.createElement("button"); bL.textContent="読込"; bL.onclick=()=>loadSlot(nm);
-    const bU=document.createElement("button"); bU.textContent="更新"; bU.title="今の編集内容でこのプランを上書き"; bU.onclick=()=>updateSlot(nm);
-    const bC=document.createElement("button"); bC.className="sub"; bC.textContent="複製"; bC.title="このプランをコピーして新しいプランを作る"; bC.onclick=()=>duplicateSlot(nm);
+    const bL=document.createElement("button"); bL.textContent=isCur?"編集中":"開く"; bL.disabled=isCur; if(!isCur) bL.onclick=()=>loadSlot(nm);
+    const bC=document.createElement("button"); bC.className="sub"; bC.textContent="複製"; bC.onclick=()=>duplicateSlot(nm);
     const bD=document.createElement("button"); bD.className="danger"; bD.textContent="削除"; bD.onclick=()=>deleteSlot(nm);
-    btns.append(bL,bU,bC,bD); row.appendChild(btns); box.appendChild(row);
+    btns.append(bL,bC,bD); row.appendChild(btns); box.appendChild(row);
   });
 }
-document.getElementById("btnSaveSlot").onclick=saveSlot;
+document.getElementById("btnNewPlan").onclick=newPlan;
+document.getElementById("btnNamePlan").onclick=namePlan;
+updateCurPlanUI();
 
 // ----- 並べて比較（各プランをその場で編集できる）-----
 let cmpItems=[];   // {nm, layout(編集用コピー), cur, canvas, sel, dispW, status}
@@ -1104,7 +1140,7 @@ function getRoomId(){ const u=new URL(location.href); return (u.searchParams.get
 function syncSanitize(){
   const w=currentLayoutObj();
   (w.furns||[]).forEach(f=>{ delete f._chairBlocked; });
-  return { working:w, slots:getSlots(), customFurn:getCustom() };
+  return { working:w, slots:getSlots(), customFurn:getCustom(), currentPlan:currentPlanName };
 }
 function syncPush(){
   if(!fbRoomRef || applyingRemote) return;
@@ -1133,6 +1169,8 @@ function applyRemoteFull(st){
   try{
     const cj=JSON.stringify(st.customFurn||[]);
     if(cj!==lastCustomJson){ lastCustomJson=cj; localStorage.setItem(CUSTOM_KEY, cj); refreshFurnTypeSelect(); renderCustomList(); }
+    const cp=st.currentPlan||null;
+    if(cp!==currentPlanName){ currentPlanName=cp; if(cp) localStorage.setItem(CURPLAN_KEY,cp); else localStorage.removeItem(CURPLAN_KEY); updateCurPlanUI(); renderSlotList(); }
     const sj=JSON.stringify(st.slots||{});
     if(sj!==lastSlotsJson){ lastSlotsJson=sj; localStorage.setItem(SLOTS_KEY, sj); renderSlotList(); if(cmpShown()) openCompare(); }
     const wj=JSON.stringify(st.working||{});
