@@ -228,6 +228,7 @@
       <div class="row"><span class="badge">現在のプラン: <b id="curPlanName">未設定</b></span></div>
       <button id="btnNewPlan" class="full">＋ 新しいプランを作る</button>
       <button id="btnNamePlan" class="full sub" style="margin-top:6px;">今の配置に名前を付ける</button>
+      <button id="btnSaveNow" class="full sub" style="margin-top:6px;">💾 今すぐ保存</button>
       <div id="slotList"></div>
       <button id="btnCompare" class="full sub" style="margin-top:10px;">▦ 並べて比較する</button>
       <div class="hint" id="saveInfo">名前を決めると、以降の変更は自動で保存されます。</div>
@@ -733,7 +734,7 @@ function select(id){
 function applyEdit(mut, full){
   const f=ctxSelFurn(); if(!f) return; mut(f);
   if(cmpActive){ drawCard(cmpActive); }
-  else { layoutFurn(f); if(full) refreshOverlap(); }
+  else { layoutFurn(f); if(full) refreshOverlap(); else scheduleSaveWorking(); }  // 名前・色なども保存対象に
   updateChairStatusUI();
 }
 document.getElementById("pName").oninput=e=>applyEdit(f=>f.name=e.target.value,false);
@@ -902,8 +903,13 @@ function renderSlotList(){
     btns.append(bL,bC,bD); row.appendChild(btns); box.appendChild(row);
   });
 }
+function saveNow(){
+  saveWorking(); autoSaveToCurrentPlan(); syncPush();
+  document.getElementById("saveInfo").textContent = currentPlanName ? `「${currentPlanName}」を保存しました ✓` : "保存しました ✓（プラン名は未設定）";
+}
 document.getElementById("btnNewPlan").onclick=newPlan;
 document.getElementById("btnNamePlan").onclick=namePlan;
+document.getElementById("btnSaveNow").onclick=saveNow;
 updateCurPlanUI();
 
 // ----- 並べて比較（各プランをその場で編集できる）-----
