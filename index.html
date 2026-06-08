@@ -169,10 +169,10 @@
 
     <div class="section">
       <h2>① 実寸（大きさ）合わせ</h2>
-      <div class="hint">家具を正しい大きさにするため、図上で「長さの分かる2点」をクリックして実寸(cm)を入れます。最初に必ず行ってください。</div>
-      <button id="btnCalib" class="full sub" style="margin-top:8px;">2点クリックで実寸設定</button>
+      <div class="hint">洋室6.1の左壁＝360cm を基準に、毎回自動で正しい縮尺に設定されます（通常は触らなくてOK）。</div>
+      <button id="btnCalib" class="full sub" style="margin-top:8px;">2点クリックで実寸を取り直す</button>
       <div class="row" style="margin-top:6px;">
-        <label>実寸(cm)</label><input type="number" id="calibCm" value="180" step="1">
+        <label>実寸(cm)</label><input type="number" id="calibCm" value="360" step="1">
       </div>
       <div class="row"><label>または倍率</label><input type="number" id="scaleNum" step="0.01"><span class="hint" style="margin:0;">cm/px</span></div>
       <span class="badge" id="scaleInfo">倍率: -</span>
@@ -352,8 +352,9 @@ const PRESETS = [
   { key:"wall",   name:"障害物/壁", w:50, d:50, color:"#9aa0a6" },
 ];
 
-// 倍率: 画像1pxが何cmか（実寸調整可）。初期は建物幅から概算
-let scaleCmPerPx = 0.70;
+// 倍率: 画像1pxが何cmか。洋室6.1の左壁(赤点間)=360cm → 約450px なので 0.80 で固定
+const FIXED_SCALE = 0.80;
+let scaleCmPerPx = FIXED_SCALE;
 let furns = [];
 let selectedId = null;
 let nextId = 1;
@@ -504,8 +505,9 @@ floorImg.onload=()=>{
   panY = (stageWrap.clientHeight - imgH*zoom)/2;
   applyZoom();
   if(localStorage.getItem(LS_KEY)) loadLayout(true);
+  scaleCmPerPx=FIXED_SCALE;   // 赤点間=360cm に毎回固定
   document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2);
-  updateScaleInfo(); drawGrid(); renderSlotList();
+  updateScaleInfo(); relayoutAll(); renderSlotList();
   booted=true; applyBgMode();
  }catch(err){ console.error("起動処理でエラー:", err); }
 };
@@ -804,7 +806,7 @@ function currentLayoutObj(){
 }
 function loadFromObj(d){
   furns.forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); });
-  scaleCmPerPx=d.scaleCmPerPx||0.70; furns=d.furns||[]; nextId=d.nextId||1;
+  scaleCmPerPx=d.scaleCmPerPx||FIXED_SCALE; furns=d.furns||[]; nextId=d.nextId||1;
   furns.forEach(f=>{ if(f.id>=nextId) nextId=f.id+1; });
   if(d.calibCm) document.getElementById("calibCm").value=d.calibCm;
   document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2);
@@ -1116,7 +1118,7 @@ function schedulePush(){ clearTimeout(_pushTimer); _pushTimer=setTimeout(syncPus
 
 function applyWorking(w){
   if(!w) return;
-  if(w.scaleCmPerPx){ scaleCmPerPx=w.scaleCmPerPx; document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2); updateScaleInfo(); }
+  scaleCmPerPx=FIXED_SCALE; document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2); updateScaleInfo();
   if(w.calibCm!=null) document.getElementById("calibCm").value=w.calibCm;
   const incoming=w.furns||[]; const inIds=new Set(incoming.map(f=>f.id));
   furns.filter(f=>!inIds.has(f.id)).forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); });
