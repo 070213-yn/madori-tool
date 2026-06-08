@@ -80,7 +80,7 @@
   input[type="color"] { width: 40px; height: 30px; border: none; background: none; cursor: pointer; padding: 0; border-radius:10px; overflow:hidden; }
 
   /* ステージ */
-  #stageWrap { flex: 1; position: relative; overflow: auto; border-radius: var(--rad);
+  #stageWrap { flex: 1; position: relative; overflow: hidden; border-radius: var(--rad);
     background: linear-gradient(160deg, rgba(255,255,255,.5), rgba(225,238,255,.55));
     border:1px solid var(--glass-brd); box-shadow: var(--sh-soft); }
   #stageSizer { position: relative; }
@@ -291,6 +291,7 @@ let furns = [];
 let selectedId = null;
 let nextId = 1;
 let zoom = 1;
+let panX = 0, panY = 0;   // キャンバスの表示位置オフセット
 let imgW = 0, imgH = 0;
 let cmpActive = null;   // 比較ビューで編集中のカード（null=メイン編集）
 
@@ -345,9 +346,11 @@ floorImg.onload=()=>{
   floorImg.style.width=imgW+"px"; floorImg.style.height=imgH+"px";
   gridCanvas.width=imgW; gridCanvas.height=imgH;
   calibLayer.width=imgW; calibLayer.height=imgH;
-  // 画面に収まる初期ズーム
+  // 画面に収まる初期ズーム＆中央配置
   zoom = Math.min(1, (stageWrap.clientWidth-20)/imgW, (stageWrap.clientHeight-20)/imgH);
   if(!isFinite(zoom)||zoom<=0) zoom=0.7;
+  panX = (stageWrap.clientWidth - imgW*zoom)/2;
+  panY = (stageWrap.clientHeight - imgH*zoom)/2;
   applyZoom();
   if(localStorage.getItem(LS_KEY)) loadLayout(true);
   document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2);
@@ -355,36 +358,36 @@ floorImg.onload=()=>{
 };
 if(floorImg.complete && floorImg.naturalWidth) floorImg.onload();
 
-// ズーム
+// ズーム＆移動（位置オフセット方式：どんな倍率でも自由に動かせる）
 function applyZoom(){
-  stage.style.transform=`scale(${zoom})`;
-  stageSizer.style.width=(imgW*zoom)+"px";
-  stageSizer.style.height=(imgH*zoom)+"px";
+  stage.style.transform=`translate(${panX}px,${panY}px) scale(${zoom})`;
   document.getElementById("zoomLabel").textContent=Math.round(zoom*100)+"%";
 }
-function setZoom(z){ zoom=Math.max(0.05,z); applyZoom(); }  // 上限なし
-document.getElementById("zoomIn").onclick=()=>setZoom(zoom+0.1);
-document.getElementById("zoomOut").onclick=()=>setZoom(zoom-0.1);
+// (cx,cy)=stageWrap内の座標 を中心にズーム
+function zoomAt(factor, cx, cy){
+  const nz=Math.max(0.05, zoom*factor);
+  const contentX=(cx-panX)/zoom, contentY=(cy-panY)/zoom;
+  zoom=nz; panX=cx-contentX*zoom; panY=cy-contentY*zoom;
+  applyZoom();
+}
+function zoomCenter(factor){ zoomAt(factor, stageWrap.clientWidth/2, stageWrap.clientHeight/2); }
+document.getElementById("zoomIn").onclick=()=>zoomCenter(1.15);
+document.getElementById("zoomOut").onclick=()=>zoomCenter(1/1.15);
 // ホイールでカーソル中心ズーム
 stageWrap.addEventListener("wheel",(e)=>{
   if(document.getElementById("compareView").classList.contains("show")) return; // 比較ビュー中は通常スクロール
   e.preventDefault();
   const rect=stageWrap.getBoundingClientRect();
-  const cx=e.clientX-rect.left, cy=e.clientY-rect.top;
-  const contentX=(stageWrap.scrollLeft+cx)/zoom, contentY=(stageWrap.scrollTop+cy)/zoom;
-  const factor=e.deltaY<0?1.12:1/1.12;
-  setZoom(zoom*factor);
-  stageWrap.scrollLeft=contentX*zoom-cx;
-  stageWrap.scrollTop=contentY*zoom-cy;
+  zoomAt(e.deltaY<0?1.12:1/1.12, e.clientX-rect.left, e.clientY-rect.top);
 },{passive:false});
 
-// ホイール（中）ボタン ドラッグでキャンバス全体を移動
+// 中ボタン ドラッグでキャンバス全体を移動（引き＝縮小時でも可）
 stageWrap.addEventListener("mousedown",(e)=>{
   if(e.button!==1) return;            // 中ボタンのみ
   e.preventDefault();
-  const sx=e.clientX, sy=e.clientY, ol=stageWrap.scrollLeft, ot=stageWrap.scrollTop;
+  const sx=e.clientX, sy=e.clientY, opx=panX, opy=panY;
   const prevCursor=stageWrap.style.cursor; stageWrap.style.cursor="grabbing";
-  function mv(ev){ stageWrap.scrollLeft=ol-(ev.clientX-sx); stageWrap.scrollTop=ot-(ev.clientY-sy); }
+  function mv(ev){ panX=opx+(ev.clientX-sx); panY=opy+(ev.clientY-sy); applyZoom(); }
   function up(){ stageWrap.style.cursor=prevCursor; document.removeEventListener("mousemove",mv); document.removeEventListener("mouseup",up); }
   document.addEventListener("mousemove",mv); document.addEventListener("mouseup",up);
 });
@@ -436,8 +439,8 @@ document.getElementById("btnAdd").onclick=()=>{
   const key=document.getElementById("furnType").value;
   if(cmpActive){ addFurnToLayout(cmpActive.layout, key); cmpActive.sel=cmpActive.layout.furns.length-1; drawCard(cmpActive); fillPropPanel(ctxSelFurn()); return; }
   const p=PRESETS.find(x=>x.key===key);
-  const cx=(stageWrap.scrollLeft+stageWrap.clientWidth/2)/zoom;
-  const cy=(stageWrap.scrollTop+stageWrap.clientHeight/2)/zoom;
+  const cx=(stageWrap.clientWidth/2 - panX)/zoom;
+  const cy=(stageWrap.clientHeight/2 - panY)/zoom;
   const f={ id:nextId++, name:p.name, w:p.w, d:p.d, angle:0, color:p.color,
     xCm:cx*scaleCmPerPx, yCm:cy*scaleCmPerPx, chair:!!p.chair, chairDir:"front", chairDepth:70 };
   furns.push(f); renderFurn(f); select(f.id); refreshOverlap();
