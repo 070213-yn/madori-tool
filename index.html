@@ -470,9 +470,10 @@ function renderCustomList(){
     box.appendChild(row);
   });
 }
-refreshFurnTypeSelect(); renderCustomList();
+try{ refreshFurnTypeSelect(); renderCustomList(); }catch(err){ console.error("家具カタログ初期化エラー:", err); }
 
 floorImg.onload=()=>{
+ try{
   imgW=floorImg.naturalWidth; imgH=floorImg.naturalHeight;
   stage.style.width=imgW+"px"; stage.style.height=imgH+"px";
   floorImg.style.width=imgW+"px"; floorImg.style.height=imgH+"px";
@@ -487,6 +488,7 @@ floorImg.onload=()=>{
   if(localStorage.getItem(LS_KEY)) loadLayout(true);
   document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2);
   updateScaleInfo(); drawGrid(); renderSlotList();
+ }catch(err){ console.error("起動処理でエラー:", err); }
 };
 if(floorImg.complete && floorImg.naturalWidth) floorImg.onload();
 
@@ -592,7 +594,7 @@ function renderFurn(f){
     const cz=document.createElement("div"); cz.className="clearZone"; cz.id="cz_"+f.id; cz.style.display="none"; stage.appendChild(cz);
     makeDraggable(el,f);
   }
-  layoutFurn(f);
+  try{ layoutFurn(f); }catch(err){ console.error("家具描画エラー:", err, f); }
 }
 function furnStrokeColor(f, overlapping){
   if(overlapping) return "#ff2d2d";
@@ -780,8 +782,8 @@ function loadFromObj(d){
 
 // ----- 作業状態の自動保存（リロードで復元）-----
 function saveWorking(){ localStorage.setItem(LS_KEY, JSON.stringify(currentLayoutObj())); }
-var _saveTimer=null;
-function scheduleSaveWorking(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>{ saveWorking(); syncPush(); },400); }
+var _saveTimer=null, remoteApplyAt=0;
+function scheduleSaveWorking(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>{ saveWorking(); if(Date.now()-remoteApplyAt>1200) syncPush(); },400); }
 function loadLayout(silent){
   const raw=localStorage.getItem(LS_KEY); if(!raw){ if(!silent) alert("保存データがありません"); return; }
   loadFromObj(JSON.parse(raw));
@@ -1091,13 +1093,15 @@ function applyWorking(w){
 }
 function applyRemoteFull(st){
   applyingRemote=true;
-  const cj=JSON.stringify(st.customFurn||[]);
-  if(cj!==lastCustomJson){ lastCustomJson=cj; localStorage.setItem(CUSTOM_KEY, cj); refreshFurnTypeSelect(); renderCustomList(); }
-  const sj=JSON.stringify(st.slots||{});
-  if(sj!==lastSlotsJson){ lastSlotsJson=sj; localStorage.setItem(SLOTS_KEY, sj); renderSlotList(); if(cmpShown()) openCompare(); }
-  const wj=JSON.stringify(st.working||{});
-  if(wj!==lastWorkingJson){ lastWorkingJson=wj; applyWorking(st.working); }
-  applyingRemote=false;
+  try{
+    const cj=JSON.stringify(st.customFurn||[]);
+    if(cj!==lastCustomJson){ lastCustomJson=cj; localStorage.setItem(CUSTOM_KEY, cj); refreshFurnTypeSelect(); renderCustomList(); }
+    const sj=JSON.stringify(st.slots||{});
+    if(sj!==lastSlotsJson){ lastSlotsJson=sj; localStorage.setItem(SLOTS_KEY, sj); renderSlotList(); if(cmpShown()) openCompare(); }
+    const wj=JSON.stringify(st.working||{});
+    if(wj!==lastWorkingJson){ lastWorkingJson=wj; applyWorking(st.working); }
+  }catch(err){ console.error("同期適用エラー:", err); }
+  finally{ applyingRemote=false; remoteApplyAt=Date.now(); }   // 直後のエコー送信を抑止
 }
 function flushPendingRemote(){ if(pendingRemote){ const p=pendingRemote; pendingRemote=null; applyRemoteFull(p); } }
 
