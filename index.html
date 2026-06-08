@@ -775,6 +775,8 @@ function furnCorners(f){ return corners(f.xCm,f.yCm,f.w,f.d,f.angle); }
 // 重なり判定用：各家具を少し内側に縮める（接触や数cmの重なりは無視）
 const OVERLAP_PAD = 1.5; // cm
 function furnOverlapCorners(f){ return corners(f.xCm,f.yCm, Math.max(1,f.w-2*OVERLAP_PAD), Math.max(1,f.d-2*OVERLAP_PAD), f.angle); }
+// 椅子は重なり判定の対象外（机の下に入る前提）
+function isChairLike(f){ return /椅子|チェア|chair/i.test(f.name||""); }
 function chairZoneCorners(f){
   const w=f.w,d=f.d,depth=f.chairDepth; let zw,zh,ox,oy;
   if(f.chairDir==="front"){ zw=w; zh=depth; ox=0; oy=d/2+depth/2; }
@@ -787,13 +789,15 @@ function chairZoneCorners(f){
 }
 function refreshOverlap(){
   let cnt=0; const ov=new Set();
-  for(let i=0;i<furns.length;i++) for(let j=i+1;j<furns.length;j++)
+  for(let i=0;i<furns.length;i++) for(let j=i+1;j<furns.length;j++){
+    if(isChairLike(furns[i])||isChairLike(furns[j])) continue;   // 椅子は判定しない
     if(overlapSAT(furnOverlapCorners(furns[i]),furnOverlapCorners(furns[j]))){ ov.add(furns[i].id); ov.add(furns[j].id); cnt++; }
+  }
   furns.forEach(f=>{ const el=document.getElementById("furn_"+f.id); const pth=el&&el.querySelector(".fshape path"); if(pth) pth.setAttribute("stroke", furnStrokeColor(f, ov.has(f.id))); });
   document.getElementById("overlapInfo").innerHTML=cnt?`<span class="warn">重なり: ${cnt}組</span>`:`<span class="ok">重なり: なし</span>`;
   furns.filter(f=>f.chair).forEach(f=>{
     const zone=chairZoneCorners(f); let blocked=false;
-    for(const o of furns){ if(o.id===f.id) continue; if(overlapSAT(zone,furnOverlapCorners(o))){ blocked=true; break; } }
+    for(const o of furns){ if(o.id===f.id||isChairLike(o)) continue; if(overlapSAT(zone,furnOverlapCorners(o))){ blocked=true; break; } }
     const cz=document.getElementById("cz_"+f.id);
     if(cz){ cz.style.background=blocked?"rgba(255,45,45,.30)":"rgba(60,220,90,.25)"; cz.style.borderColor=blocked?"#ff2d2d":"#3cdc5a"; }
     f._chairBlocked=blocked;
@@ -893,6 +897,19 @@ function deleteSlot(nm){
   renderSlotList(); syncPush();   // 即同期して削除を確定
   document.getElementById("saveInfo").textContent=`「${nm}」を削除しました`;
 }
+// プラン名を変更
+function renameSlot(nm){
+  const nn=(prompt("新しいプラン名", nm)||"").trim();
+  if(!nn || nn===nm) return;
+  const slots=getSlots();
+  if(slots[nn] && !confirm(`「${nn}」は既にあります。上書きしますか？`)) return;
+  slots[nn]=slots[nm]; delete slots[nm];
+  markDeleted(nm);                 // 旧名は同期で復活させない
+  writeSlotsLocal(slots);
+  if(currentPlanName===nm) setCurrentPlan(nn); else renderSlotList();
+  syncPush();
+  document.getElementById("saveInfo").textContent=`「${nm}」→「${nn}」に変更しました`;
+}
 // 今の配置でこのプランを上書き（以降そのプランへ自動保存）
 function overwriteSlot(nm){
   if(!confirm(`「${nm}」を、今の配置で上書きしますか？`)) return;
@@ -909,14 +926,16 @@ function renderSlotList(){
     const cnt=(slots[nm].furns||[]).length, isCur=(nm===currentPlanName);
     const row=document.createElement("div"); row.className="slotItem"+(isCur?" current":"");
     const nmEl=document.createElement("span"); nmEl.className="nm"; nmEl.textContent=(isCur?"● ":"")+nm;
+    nmEl.style.cursor="pointer"; nmEl.title="クリックで名前を変更"; nmEl.onclick=()=>renameSlot(nm);
     const dt=document.createElement("span"); dt.className="dt"; dt.textContent=` (${cnt}点)`;
     nmEl.appendChild(dt); row.appendChild(nmEl);
     const btns=document.createElement("div"); btns.className="btns";
     const bL=document.createElement("button"); bL.textContent=isCur?"編集中":"開く"; bL.disabled=isCur; if(!isCur) bL.onclick=()=>loadSlot(nm);
+    const bR=document.createElement("button"); bR.className="sub"; bR.textContent="名前変更"; bR.onclick=()=>renameSlot(nm);
     const bO=document.createElement("button"); bO.className="sub"; bO.textContent="上書き"; bO.title="今の配置でこのプランを上書き"; bO.onclick=()=>overwriteSlot(nm);
     const bC=document.createElement("button"); bC.className="sub"; bC.textContent="複製"; bC.onclick=()=>duplicateSlot(nm);
     const bD=document.createElement("button"); bD.className="danger"; bD.textContent="削除"; bD.onclick=()=>deleteSlot(nm);
-    btns.append(bL,bO,bC,bD); row.appendChild(btns); box.appendChild(row);
+    btns.append(bL,bR,bO,bC,bD); row.appendChild(btns); box.appendChild(row);
   });
 }
 function saveNow(){
@@ -945,13 +964,13 @@ function drawCard(item){
   const sc=layout.scaleCmPerPx||0.70, fs=layout.furns||[];
   // 重なり判定
   const ov=new Set();
-  for(let i=0;i<fs.length;i++) for(let j=i+1;j<fs.length;j++) if(overlapSAT(furnOverlapCorners(fs[i]),furnOverlapCorners(fs[j]))){ ov.add(i); ov.add(j); }
+  for(let i=0;i<fs.length;i++) for(let j=i+1;j<fs.length;j++){ if(isChairLike(fs[i])||isChairLike(fs[j])) continue; if(overlapSAT(furnOverlapCorners(fs[i]),furnOverlapCorners(fs[j]))){ ov.add(i); ov.add(j); } }
   // 椅子ゾーン
   let chairWarn=false;
   fs.forEach((f,idx)=>{
     if(!f.chair){ f._chairBlocked=false; return; }
     const zone=chairZoneCorners(f); let blocked=false;
-    for(let k=0;k<fs.length;k++){ if(k===idx) continue; if(overlapSAT(zone,furnOverlapCorners(fs[k]))){ blocked=true; break; } }
+    for(let k=0;k<fs.length;k++){ if(k===idx||isChairLike(fs[k])) continue; if(overlapSAT(zone,furnOverlapCorners(fs[k]))){ blocked=true; break; } }
     f._chairBlocked=blocked; if(blocked) chairWarn=true;
     cmpDrawPoly(ctx,zone,sc,s, blocked?"rgba(255,45,45,.30)":"rgba(60,220,90,.25)", blocked?"#ff2d2d":"#3cdc5a");
   });
