@@ -296,6 +296,7 @@
     <div class="row" id="fmSemiRow"><label>平らな側</label>
       <select id="fmSemiDir" style="flex:1;"><option value="bottom">下</option><option value="top">上</option><option value="left">左</option><option value="right">右</option></select>
     </div>
+    <div class="row" id="fmSemiStraightRow"><label>丸み開始まで</label><input type="number" id="fmSemiStraight" value="0" step="1"><span class="hint" style="margin:0;">cm（大きいほど直線が長く・丸みが浅く）</span></div>
     <div id="fmLBox">
       <div class="row"><label>欠ける角</label>
         <select id="fmLcorner" style="flex:1;"><option value="tr">右上</option><option value="tl">左上</option><option value="br">右下</option><option value="bl">左下</option></select>
@@ -404,7 +405,25 @@ function labelMetrics(wpx, dpx, angle){
 // ===== 形状（SVGパス）=====
 // cm の形状パラメータを px に変換（ppc = 1cmあたりのpx）
 function shapePxParams(f, ppc){
-  return { cornerPx:(f.cornerR||0)*ppc, semiDir:f.semiDir||"bottom", lcorner:f.lcorner||"tr", nwPx:(f.lw||0)*ppc, ndPx:(f.ld||0)*ppc };
+  return { cornerPx:(f.cornerR||0)*ppc, semiDir:f.semiDir||"bottom", semiStraightPx:(f.semiStraight||0)*ppc, lcorner:f.lcorner||"tr", nwPx:(f.lw||0)*ppc, ndPx:(f.ld||0)*ppc };
+}
+// 半円/D字（直線部分＋丸み＋角丸）を点サンプリングで生成（向きに依らず安定）
+function semiPolyPath(W,H,dir,st,r){
+  let L,Dp;
+  if(dir==="left"||dir==="right"){ L=H; Dp=W; } else { L=W; Dp=H; }
+  st=Math.max(0,Math.min(st,Dp));
+  r=Math.max(0,Math.min(r, Math.min(L/2, st)));
+  const cap=Math.max(0,Dp-st), P=[];
+  P.push([0,st]);
+  const N=24; for(let i=1;i<N;i++){ const th=Math.PI*i/N; P.push([ L/2 - (L/2)*Math.cos(th), st + cap*Math.sin(th) ]); }
+  P.push([L,st]); P.push([L,r]);
+  if(r>0){ const M=7; for(let i=1;i<=M;i++){ const ph=-(Math.PI/2)*i/M; P.push([ (L-r)+r*Math.cos(ph), r+r*Math.sin(ph) ]); } }
+  P.push([r,0]);
+  if(r>0){ const M=7; for(let i=1;i<=M;i++){ const ph=-(Math.PI/2)-(Math.PI/2)*i/M; P.push([ r+r*Math.cos(ph), r+r*Math.sin(ph) ]); } }
+  const f=(n)=>Math.round(n*100)/100;
+  const map=([u,v])=> dir==="bottom"?[u,H-v] : dir==="top"?[u,v] : dir==="left"?[v,u] : [W-v,u];
+  let d=""; P.forEach((pt,i)=>{ const xy=map(pt); d+=(i?"L":"M")+f(xy[0])+","+f(xy[1]); });
+  return d+"Z";
 }
 // 形状ごとのSVGパス（座標は 0..w, 0..h）
 function svgShapePath(shape, w, h, p){
@@ -418,11 +437,7 @@ function svgShapePath(shape, w, h, p){
     return `M0,${f(ry)} A${f(rx)},${f(ry)} 0 0 1 ${f(w)},${f(ry)} A${f(rx)},${f(ry)} 0 0 1 0,${f(ry)} Z`;
   }
   if(shape==="semi"){
-    const dir=p.semiDir||"bottom";
-    if(dir==="bottom") return `M0,${f(h)} A${f(w/2)},${f(h)} 0 0 1 ${f(w)},${f(h)} Z`;
-    if(dir==="top")    return `M0,0 A${f(w/2)},${f(h)} 0 0 0 ${f(w)},0 Z`;
-    if(dir==="left")   return `M0,0 A${f(w)},${f(h/2)} 0 0 1 0,${f(h)} Z`;
-    return `M${f(w)},0 A${f(w)},${f(h/2)} 0 0 0 ${f(w)},${f(h)} Z`; // right
+    return semiPolyPath(w, h, p.semiDir||"bottom", p.semiStraightPx||0, p.cornerPx||0);
   }
   if(shape==="L"){
     const nw=Math.max(0,Math.min(p.nwPx||0,w)), nd=Math.max(0,Math.min(p.ndPx||0,h)), c=p.lcorner||"tr";
@@ -597,7 +612,7 @@ document.getElementById("btnAdd").onclick=()=>{
 };
 function furnFromType(p, xCm, yCm){
   return { name:p.name, w:p.w, d:p.d, angle:0, color:p.color, xCm, yCm,
-    shape:p.shape||"rect", cornerR:p.cornerR||0, semiDir:p.semiDir||"bottom",
+    shape:p.shape||"rect", cornerR:p.cornerR||0, semiDir:p.semiDir||"bottom", semiStraight:p.semiStraight||0,
     lcorner:p.lcorner||"tr", lw:p.lw||0, ld:p.ld||0,
     chair:!!p.chair, chairDir:"front", chairDepth:70 };
 }
@@ -1000,8 +1015,9 @@ document.getElementById("btnClear").onclick=()=>{ if(!confirm("全ての家具�
 let fmEditingKey=null;
 function fmShapeUI(){
   const sh=document.getElementById("fmShape").value;
-  document.getElementById("fmRoundRow").style.display=(sh==="round")?"flex":"none";
+  document.getElementById("fmRoundRow").style.display=(sh==="round"||sh==="semi")?"flex":"none";
   document.getElementById("fmSemiRow").style.display=(sh==="semi")?"flex":"none";
+  document.getElementById("fmSemiStraightRow").style.display=(sh==="semi")?"flex":"none";
   document.getElementById("fmLBox").style.display=(sh==="L")?"block":"none";
   fmPreview();
 }
@@ -1014,6 +1030,7 @@ function fmReadForm(){
     shape: document.getElementById("fmShape").value,
     cornerR: parseFloat(document.getElementById("fmCorner").value)||0,
     semiDir: document.getElementById("fmSemiDir").value,
+    semiStraight: parseFloat(document.getElementById("fmSemiStraight").value)||0,
     lcorner: document.getElementById("fmLcorner").value,
     lw: parseFloat(document.getElementById("fmLw").value)||0,
     ld: parseFloat(document.getElementById("fmLd").value)||0,
@@ -1024,7 +1041,7 @@ function fmPreview(){ drawFurnPreview(document.getElementById("fmPreview"), fmRe
 function openFurnModal(preset){
   fmEditingKey=preset?preset.key:null;
   document.getElementById("fmTitle").textContent=preset?"家具の種類を編集":"家具の種類を作る";
-  const p=preset||{ name:"", w:120, d:60, color:"#a8e6cf", shape:"rect", cornerR:14, semiDir:"bottom", lcorner:"tr", lw:60, ld:30, chair:false };
+  const p=preset||{ name:"", w:120, d:60, color:"#a8e6cf", shape:"rect", cornerR:14, semiDir:"bottom", semiStraight:0, lcorner:"tr", lw:60, ld:30, chair:false };
   document.getElementById("fmName").value=p.name||"";
   document.getElementById("fmW").value=p.w||120;
   document.getElementById("fmD").value=p.d||60;
@@ -1032,6 +1049,7 @@ function openFurnModal(preset){
   document.getElementById("fmShape").value=p.shape||"rect";
   document.getElementById("fmCorner").value=(p.cornerR!=null?p.cornerR:14);
   document.getElementById("fmSemiDir").value=p.semiDir||"bottom";
+  document.getElementById("fmSemiStraight").value=(p.semiStraight!=null?p.semiStraight:0);
   document.getElementById("fmLcorner").value=p.lcorner||"tr";
   document.getElementById("fmLw").value=(p.lw!=null?p.lw:60);
   document.getElementById("fmLd").value=(p.ld!=null?p.ld:30);
@@ -1043,7 +1061,7 @@ function openFurnModal(preset){
 function closeFurnModal(){ document.getElementById("furnModal").classList.remove("show"); }
 document.getElementById("btnNewFurn").onclick=()=>openFurnModal(null);
 document.getElementById("fmShape").onchange=fmShapeUI;
-["fmName","fmW","fmD","fmColor","fmCorner","fmSemiDir","fmLcorner","fmLw","fmLd"].forEach(id=>{
+["fmName","fmW","fmD","fmColor","fmCorner","fmSemiDir","fmSemiStraight","fmLcorner","fmLw","fmLd"].forEach(id=>{
   const el=document.getElementById(id); el.addEventListener("input",fmPreview); el.addEventListener("change",fmPreview);
 });
 document.getElementById("fmChair").addEventListener("change",fmPreview);
