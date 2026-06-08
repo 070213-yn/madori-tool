@@ -827,13 +827,13 @@ document.getElementById("cmpSize").oninput=()=>{ const dispW=parseInt(document.g
 
 document.getElementById("btnClear").onclick=()=>{ if(!confirm("全ての家具を消します。よろしいですか？")) return; furns.forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); }); furns=[]; selectedId=null; document.getElementById("propBox").style.display="none"; refreshOverlap(); };
 
-// 空クリックで選択解除
-stage.addEventListener("mousedown",(e)=>{
+// 何もないところ（家具以外）を左クリックで選択解除
+stageWrap.addEventListener("mousedown",(e)=>{
   if(e.button!==0) return;
-  if(e.target===stage||e.target===floorImg||e.target===gridCanvas){
-    selectedId=null; furns.forEach(f=>document.getElementById("furn_"+f.id)?.classList.remove("selected"));
-    document.getElementById("propBox").style.display="none";
-  }
+  if(document.getElementById("compareView").classList.contains("show")) return; // 比較ビュー中は対象外
+  if(e.target.closest && e.target.closest(".furn")) return;                       // 家具の上は解除しない
+  selectedId=null; furns.forEach(f=>document.getElementById("furn_"+f.id)?.classList.remove("selected"));
+  document.getElementById("propBox").style.display="none";
 });
 
 // ===== リアルタイム共有（Firebase Realtime Database）=====
