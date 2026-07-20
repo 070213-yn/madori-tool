@@ -331,7 +331,11 @@
       <h2>⑥ 3Dの内装</h2>
       <div class="row"><label>壁の色</label><input type="color" id="dcWall"><span class="hint" style="margin:0;">全部の壁・天井</span></div>
       <div class="row"><label>ドアの色</label><input type="color" id="dcDoor"><span class="hint" style="margin:0;">全部のドア・枠</span></div>
-      <button id="btnDecorReset" class="full sub" style="margin-top:4px;">色を元に戻す</button>
+      <button id="btnDecorReset" class="full sub" style="margin-top:4px;">色・床を元に戻す</button>
+      <div style="border-top:1px solid var(--glass-line); margin:10px 0 6px; padding-top:8px;">
+        <div class="hint" style="margin:0 0 6px;">部屋ごとの床</div>
+        <div id="floorDecorList"></div>
+      </div>
       <div style="border-top:1px solid var(--glass-line); margin:10px 0 6px; padding-top:8px;">
         <div class="hint" style="margin:0 0 6px;">窓の飾り（バルコニーの掃き出し窓はカーテンのみ）</div>
         <div id="winDecorList"></div>
@@ -480,6 +484,7 @@ const PRESETS = [
   { key:"shelf",  name:"棚/収納", w:80, d:40, color:"#d4b89a" },
   { key:"fridge", name:"冷蔵庫", w:60, d:65, color:"#cfe8ff" },
   { key:"washer", name:"洗濯機", w:60, d:60, color:"#cfe8ff" },
+  { key:"table_marble",name:"ローテーブル(大理石)", w:100, d:100, color:"#efeae0", hCm:36 },
   { key:"dresser",name:"ドレッサー", w:90, d:45, color:"#f0dde3", hCm:75 },
   { key:"chair_office",name:"オフィスチェア", w:62, d:62, color:"#454a52" },
   { key:"frame",  name:"額縁", w:60, d:5, color:"#8a6b4a", hCm:45, baseY:120 },
@@ -496,6 +501,7 @@ const PRESETS = [
 function typeOf(f){
   const n=f.name||"";
   if(/観葉|植物|グリーン|鉢植|パキラ|ウンベラータ|モンステラ|サンスベリア|ガジュマル/.test(n)) return "plant";
+  if(/大理石|マーブル|marble/i.test(n)) return "marbletable";
   if(/額縁|絵|ポスター|アート|写真立/.test(n)) return "frame";
   if(/ドレッサー|化粧台|鏡台/.test(n)) return "dresser";
   if(/オフィスチェア|ワークチェア|デスクチェア/.test(n)) return "officechair";
@@ -516,7 +522,7 @@ function typeOf(f){
   if(/壁|障害|柱/.test(n)) return "pillar";
   return "generic";
 }
-const typeH={ plant:130, frame:45, dresser:75, officechair:110, printer:25, printer3d:40, pctower:45, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
+const typeH={ marbletable:36, plant:130, frame:45, dresser:75, officechair:110, printer:25, printer3d:40, pctower:45, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
 // 高さを指定していないときの既定の高さ
 function defaultHeight(f,type){
   type=type||typeOf(f);
@@ -524,7 +530,7 @@ function defaultHeight(f,type){
   return typeH[type]||70;
 }
 // 高さを自由に設定できる種類（ベッド・ソファ・椅子は形が複雑なので対象外）
-const HEIGHT_ADJUSTABLE=new Set(["plant","frame","dresser","printer","printer3d","pctower","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
+const HEIGHT_ADJUSTABLE=new Set(["marbletable","plant","frame","dresser","printer","printer3d","pctower","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
 function canSetHeight(f){
   const t=typeOf(f);
   if(HEIGHT_ADJUSTABLE.has(t)) return true;
@@ -546,8 +552,41 @@ const WINDOW_LIST=[
   { id:"w61",  name:"洋室6.1の窓", big:false },
   { id:"w46n", name:"洋室4.6の小窓", big:false },
 ];
+// 床材の種類（部屋ごとに選べる）
+const FLOOR_LIST=[
+  {key:"wood",     name:"フローリング（明るい）"},
+  {key:"woodDark", name:"フローリング（濃い）"},
+  {key:"marbleW",  name:"大理石（白）"},
+  {key:"marbleG",  name:"大理石（グレー）"},
+  {key:"concrete", name:"コンクリート風"},
+  {key:"tileWhite",name:"白タイル"},
+  {key:"tileGray", name:"タイル（グレー）"},
+  {key:"tileBath", name:"浴室タイル"},
+  {key:"tileDark", name:"土間タイル"},
+  {key:"carpet",   name:"カーペット"},
+  {key:"tatami",   name:"畳"},
+];
+// 床を選べる部屋と、その初期の床材
+const ROOM_LIST=[
+  {name:"LDK",          def:"wood"},
+  {name:"洋室6.1",      def:"wood"},
+  {name:"洋室4.6",      def:"wood"},
+  {name:"廊下",         def:"wood"},
+  {name:"玄関",         def:"tileDark"},
+  {name:"トイレ",       def:"tileWhite"},
+  {name:"洗面室",       def:"tileWhite"},
+  {name:"浴室",         def:"tileBath"},
+  {name:"クローゼット1",def:"wood"},
+  {name:"クローゼット2",def:"wood"},
+];
+function floorKeyFor(roomName){
+  const set=(decor.floor||{})[roomName];
+  if(set && FLOOR_LIST.some(f=>f.key===set)) return set;
+  const r=ROOM_LIST.find(x=>x.name===roomName);
+  return r? r.def : "wood";
+}
 function defaultDecor(){
-  return { wall:"#f3f0ea", door:"#b08a5e", win:{
+  return { wall:"#f3f0ea", door:"#b08a5e", floor:{}, win:{
     wldk:{type:"curtain",color:"#d9cfc0"}, w46:{type:"curtain",color:"#d9cfc0"},
     w61:{type:"curtain",color:"#d9cfc0"},  w46n:{type:"blind",color:"#e8e4dc"} } };
 }
@@ -636,7 +675,10 @@ function drawArt(key,g,W,H){
 function normalizeDecor(d){
   const base=defaultDecor();
   if(!d||typeof d!=="object") return base;
-  const out={ wall:d.wall||base.wall, door:d.door||base.door, win:{} };
+  const out={ wall:d.wall||base.wall, door:d.door||base.door, floor:{}, win:{} };
+  if(d.floor&&typeof d.floor==="object"){
+    ROOM_LIST.forEach(r=>{ const k=d.floor[r.name]; if(k&&FLOOR_LIST.some(f=>f.key===k)) out.floor[r.name]=k; });
+  }
   WINDOW_LIST.forEach(w=>{
     const s=(d.win&&d.win[w.id])||{};
     let t=s.type||base.win[w.id].type;
@@ -1569,9 +1611,22 @@ function renderWinDecor(){
     wrap.appendChild(row); box.appendChild(wrap);
   });
 }
+function renderFloorDecor(){
+  const box=document.getElementById("floorDecorList"); if(!box) return; box.innerHTML="";
+  ROOM_LIST.forEach(r=>{
+    const row=document.createElement("div"); row.className="row"; row.style.margin="0 0 5px";
+    const lb=document.createElement("label"); lb.style.minWidth="72px"; lb.style.fontSize="11px"; lb.textContent=r.name; row.appendChild(lb);
+    const sel=document.createElement("select"); sel.style.flex="1";
+    FLOOR_LIST.forEach(f=>{ const o=document.createElement("option"); o.value=f.key; o.textContent=f.name; sel.appendChild(o); });
+    sel.value=floorKeyFor(r.name);
+    sel.onchange=()=>{ decor.floor[r.name]=sel.value; onDecorChanged(); };
+    row.appendChild(sel); box.appendChild(row);
+  });
+}
 function initDecorUI(){
   const dw=document.getElementById("dcWall"), dd=document.getElementById("dcDoor");
   if(!dw) return;
+  renderFloorDecor();
   dw.value=decor.wall; dd.value=decor.door;
   dw.oninput=e=>{ decor.wall=e.target.value; onDecorChanged(); };
   dd.oninput=e=>{ decor.door=e.target.value; onDecorChanged(); };
@@ -1800,6 +1855,62 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     for(let i=0;i<900;i++){ const x=(i*97)%256,y=(i*57)%256,v=170+((i*31)%40); g.fillStyle=`rgba(${v},${v},${v-4},.5)`; g.fillRect(x,y,2,2); }
   });
   concreteTex.repeat.set(1/150,1/150);
+  // 手続きテクスチャ用の簡易乱数（毎回同じ模様になる）
+  const _mR=(i)=>((Math.sin(i*12.9898)*43758.5453)%1+1)%1;
+  // 大理石（白ベース。材質の色を掛けて好きな色にできる）
+  const marbleTex = makeTex(512,512,(g,W,H)=>{
+    g.fillStyle="#ffffff"; g.fillRect(0,0,W,H);
+    for(let i=0;i<11;i++){                                    // 淡いムラ
+      const x=W*_mR(i), y=H*_mR(i+7), r=W*(0.16+_mR(i+3)*0.3);
+      const gr=g.createRadialGradient(x,y,0,x,y,r);
+      const v=232+Math.round(_mR(i+11)*18);
+      gr.addColorStop(0,`rgba(${v},${v-2},${v-7},.5)`); gr.addColorStop(1,"rgba(255,255,255,0)");
+      g.fillStyle=gr; g.fillRect(0,0,W,H);
+    }
+    for(let i=0;i<9;i++){                                     // 主脈
+      let y=H*_mR(i+21);
+      g.strokeStyle=`rgba(${146+Math.round(_mR(i)*46)},${142+Math.round(_mR(i+2)*46)},${136+Math.round(_mR(i+4)*46)},${0.28+_mR(i+6)*0.28})`;
+      g.lineWidth=1+_mR(i+8)*2.4;
+      g.beginPath(); g.moveTo(-10,y);
+      for(let x=0;x<=W;x+=W/6){ const ny=y+(_mR(i*13+x)-0.5)*H*0.17; g.quadraticCurveTo(x+W/12,(y+ny)/2+(_mR(x+i)-0.5)*26,x+W/6,ny); y=ny; }
+      g.stroke();
+      g.lineWidth=0.7; g.strokeStyle="rgba(158,156,150,.32)";  // 細い枝脈
+      for(let k=0;k<3;k++){
+        const sx=W*_mR(i*3+k), sy=H*_mR(i*5+k);
+        g.beginPath(); g.moveTo(sx,sy);
+        g.quadraticCurveTo(sx+W*0.12,sy+(_mR(k+i)-0.5)*64,sx+W*0.24,sy+(_mR(k+5)-0.5)*84); g.stroke();
+      }
+    }
+  });
+  const carpetTex = makeTex(256,256,(g,W,H)=>{
+    g.fillStyle="#f2ede6"; g.fillRect(0,0,W,H);
+    for(let i=0;i<7;i++){                                   // ゆるいムラ
+      const x=W*_mR(i+41), y=H*_mR(i+53), r=W*(0.2+_mR(i+61)*0.3);
+      const gr=g.createRadialGradient(x,y,0,x,y,r);
+      gr.addColorStop(0,"rgba(215,206,193,.5)"); gr.addColorStop(1,"rgba(255,255,255,0)");
+      g.fillStyle=gr; g.fillRect(0,0,W,H);
+    }
+    for(let i=0;i<30000;i++){                               // 毛足の粒
+      const x=Math.floor(_mR(i)*W), y=Math.floor(_mR(i+9973)*H), v=198+((i*11)%52);
+      g.fillStyle=`rgba(${v},${v-6},${v-14},.7)`; g.fillRect(x,y,2,2);
+    }
+  });
+  carpetTex.repeat.set(1/55,1/55);
+  const tatamiTex = makeTex(256,256,(g,W,H)=>{
+    g.fillStyle="#c6ce8b"; g.fillRect(0,0,W,H);
+    for(let y=0;y<H;y+=3){
+      const v=150+((y*7)%28);
+      g.fillStyle=`rgba(${v},${v+16},${100+((y*5)%22)},.45)`; g.fillRect(0,y,W,1.7);
+    }
+    g.fillStyle="#39412c"; g.fillRect(0,0,W,9); g.fillRect(0,H-9,W,9);
+  });
+  tatamiTex.repeat.set(1/90,1/180);
+  const tileGrayTex = makeTex(256,256,(g)=>{
+    g.fillStyle="#c9cbcc"; g.fillRect(0,0,256,256);
+    g.strokeStyle="rgba(120,124,128,.6)"; g.lineWidth=2;
+    for(let i=0;i<=256;i+=64){ g.beginPath();g.moveTo(i,0);g.lineTo(i,256);g.stroke(); g.beginPath();g.moveTo(0,i);g.lineTo(256,i);g.stroke(); }
+  });
+  tileGrayTex.repeat.set(1/60,1/60);
   const grassTex = makeTex(256,256,(g)=>{          // 芝生
     g.fillStyle="#7fae62"; g.fillRect(0,0,256,256);
     for(let i=0;i<1400;i++){ const x=(i*89)%256,y=(i*53)%256; g.fillStyle=`rgba(${70+((i*13)%50)},${140+((i*29)%50)},${60+((i*7)%40)},.6)`; g.fillRect(x,y,2,3); }
@@ -1828,7 +1939,27 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     black:     new THREE.MeshStandardMaterial({ color:0x24262a, roughness:.5 }),
     counterTop:new THREE.MeshStandardMaterial({ color:0xe8e6e0, roughness:.35 }),
   };
-  const floorMats = { wood:M.woodFloor, tileWhite:M.tileWhite, tileBath:M.tileBath, tileDark:M.tileDark, concrete:M.concrete };
+  // 床材（選ばれたときに作って使い回す）
+  const marbleFloorTex=marbleTex.clone(); marbleFloorTex.repeat.set(1/75,1/75); marbleFloorTex.needsUpdate=true;
+  const _floorMats={};
+  function floorMaterial(key){
+    if(_floorMats[key]) return _floorMats[key];
+    let m;
+    switch(key){
+      case "woodDark": m=new THREE.MeshStandardMaterial({ map:woodFloorTex, color:0x8c6a48, roughness:.6, side:THREE.DoubleSide }); break;
+      case "marbleW":  m=new THREE.MeshStandardMaterial({ map:marbleFloorTex, color:0xffffff, roughness:.16, metalness:.02, side:THREE.DoubleSide }); break;
+      case "marbleG":  m=new THREE.MeshStandardMaterial({ map:marbleFloorTex, color:0xa8adb1, roughness:.2, metalness:.03, side:THREE.DoubleSide }); break;
+      case "tileGray": m=new THREE.MeshStandardMaterial({ map:tileGrayTex, roughness:.45, side:THREE.DoubleSide }); break;
+      case "carpet":   m=new THREE.MeshStandardMaterial({ map:carpetTex, color:0xcfc6b8, roughness:1, side:THREE.DoubleSide }); break;
+      case "tatami":   m=new THREE.MeshStandardMaterial({ map:tatamiTex, roughness:.92, side:THREE.DoubleSide }); break;
+      case "tileWhite":m=M.tileWhite; break;
+      case "tileBath": m=M.tileBath; break;
+      case "tileDark": m=M.tileDark; break;
+      case "concrete": m=M.concrete; break;
+      default:         m=M.woodFloor;
+    }
+    _floorMats[key]=m; return m;
+  }
   // 壁・ドアの色を内装設定から反映する（材質の色を変えるだけなので作り直し不要）
   function applyDecorMaterials(){
     const w=new THREE.Color(decor.wall||"#f3f0ea");
@@ -2031,7 +2162,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       const shape=new THREE.Shape();
       pts.forEach((p,i)=>{ const x=C(p[0]), z=C(p[1]); i?shape.lineTo(x,z):shape.moveTo(x,z); });
       const geo=new THREE.ShapeGeometry(shape); geo.rotateX(Math.PI/2);
-      const floor=new THREE.Mesh(geo, floorMats[r.mat]||M.woodFloor);
+      const floor=new THREE.Mesh(geo, r.outside? (r.mat==="concrete"?M.concrete:M.woodFloor) : floorMaterial(floorKeyFor(r.name)));
       floor.position.y=(r.level||0)+0.3; floor.receiveShadow=true;
       structGroup.add(floor);
       if(!r.outside){
@@ -2527,6 +2658,28 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     legs4(g,w,d,8,6,legMat);
   }
   // ===== 追加の家具 =====
+  // 大理石調のローテーブル：厚い天板＋一段内側の本体＋足元の光る台座
+  function marbleMat(color,rough){
+    const t=marbleTex.clone(); t.needsUpdate=true;
+    return new THREE.MeshStandardMaterial({ map:t, color:new THREE.Color(color||"#efeae0"), roughness:rough==null?0.16:rough, metalness:.04 });
+  }
+  function buildMarbleTable(f,g,H){
+    const w=f.w, d=f.d, h=Math.max(14,H||36);
+    const topT=Math.max(4,h*0.30);          // 天板の厚み
+    const plinth=Math.max(2.5,h*0.13);      // 足元の台座
+    const bodyH=Math.max(2,h-topT-plinth);
+    const in1=Math.min(w,d)*0.035;          // 本体の引っ込み
+    const in2=Math.min(w,d)*0.085;          // 台座の引っ込み（浮いて見える）
+    const mat=marbleMat(f.color,.15);
+    const body=marbleMat(f.color,.2);
+    const base=new THREE.MeshStandardMaterial({ color:0xd8dade, roughness:.28, metalness:.55 });
+    bx(g,base, w-in2*2, plinth, d-in2*2, 0, plinth/2, 0);                 // 台座
+    bx(g,body, w-in1*2, bodyH, d-in1*2, 0, plinth+bodyH/2, 0);            // 本体
+    bx(g,mat,  w, topT, d, 0, plinth+bodyH+topT/2, 0);                    // 天板
+    // 天板の縁を少しだけ濃くして厚みを強調
+    const edge=new THREE.Mesh(new THREE.BoxGeometry(w+0.6,1.2,d+0.6), new THREE.MeshStandardMaterial({color:new THREE.Color(f.color||"#efeae0").multiplyScalar(0.88),roughness:.3}));
+    edge.position.set(0,plinth+bodyH+0.6,0); g.add(edge);
+  }
   function buildDresser(f,g,H){
     const w=f.w,d=f.d,h=Math.max(40,H||75);
     const body=fMat(f.color,.98,.6), drw=fMat(f.color,.88,.55), fr=fMat(f.color,.92,.6);
@@ -2820,9 +2973,10 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const g=new THREE.Group();
     const type=typeOf(f);
     const H=heightOf(f,type);   // ユーザーが指定した高さ（未指定なら種類ごとの既定値）
-    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && type!=="plant" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
+    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && type!=="plant" && type!=="marbletable" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
     if(useExtrude){ buildExtrude(f,g,H); }
     else switch(type){
+      case "marbletable": buildMarbleTable(f,g,H); break;
       case "plant":  buildPlant(f,g,H); break;
       case "frame":  buildFrame(f,g,H); break;
       case "dresser":buildDresser(f,g,H); break;
@@ -3279,8 +3433,11 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   }
 
   // 内装（壁・ドアの色、窓のカーテン）の変更を反映する
+  let lastFloorSig=JSON.stringify(decor.floor||{});
   on3DDecor=()=>{
     applyDecorMaterials();
+    const fs=JSON.stringify(decor.floor||{});
+    if(fs!==lastFloorSig){ lastFloorSig=fs; buildStructure(); }   // 床が変わったときだけ作り直す
     if(view3dShown()||dressGroup) buildWindowDressing();
   };
 
