@@ -2284,7 +2284,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   function buildOpeningTrims(){
     PLAN3D.walls.forEach(w=>{
       const wi=wallInfo(w);
-      openingsOn(w,wi).forEach(o=>{
+      const ops=openingsOn(w,wi);
+      ops.forEach(o=>{
         const U = wi.horiz? {x:1,z:0} : {x:0,z:1};
         const N = wi.horiz? {x:0,z:1} : {x:1,z:0};
         const A = wi.horiz? {x:wi.sx+o.s0, z:wi.az} : {x:wi.ax, z:wi.sz+o.s0};
@@ -2299,8 +2300,11 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
           else g=new THREE.BoxGeometry(ft,fw,len);
           const m=new THREE.Mesh(g,fm); m.position.set(px,py,pz); m.castShadow=true; doorsGroup.add(m);
         }
-        // 縦枠2本
-        [[A.x,A.z],[A.x+U.x*wcm,A.z+U.z*wcm]].forEach(p=>{
+        // 縦枠2本。隣の開口とくっついている側は、真ん中に柱が立ってしまうので描かない
+        const joinedStart=ops.some(x=>x!==o && Math.abs(x.s1-o.s0)<2);
+        const joinedEnd  =ops.some(x=>x!==o && Math.abs(x.s0-o.s1)<2);
+        [[A.x,A.z,joinedStart],[A.x+U.x*wcm,A.z+U.z*wcm,joinedEnd]].forEach(p=>{
+          if(p[2]) return;
           const g=new THREE.BoxGeometry(wi.horiz?fw:ft, h, wi.horiz?ft:fw);
           const m=new THREE.Mesh(g,fm); m.position.set(p[0],sill+h/2,p[1]); m.castShadow=true; doorsGroup.add(m);
         });
