@@ -170,6 +170,14 @@
   /* 3Dウォークスルー */
   #view3d { position: absolute; inset: 0; z-index: 600; display: none; background: #0d1a2b; border-radius: var(--rad); overflow: hidden; }
   #view3d.show { display: block; animation: fadeIn .3s ease both; }
+  /* 2画面モード：右半分が3D、左半分は2Dの編集画面がそのまま見える */
+  #view3d.split { left: 50%; border-radius: 0 var(--rad) var(--rad) 0; box-shadow: -6px 0 18px rgba(40,70,120,.22); }
+  #view3d.split #v3dTopbar { font-size: 11px; padding: 6px 9px; gap: 8px; }
+  #view3d.split #v3dTopbar input[type="range"] { width: 66px; }
+  #view3d.split #v3dTopbar .v3dVal { min-width: 36px; }
+  #view3d.split #v3dTopbar button { padding: 5px 9px; }
+  #view3d.split #v3dHelp { font-size: 10px; padding: 5px 11px; bottom: 10px; white-space: normal; text-align: center; line-height: 1.55; max-width: calc(100% - 24px); }
+  #view3d.split #v3dPrompt { font-size: 11px; padding: 6px 12px; }
   #view3dCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   #v3dTopbar { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     padding: 8px 12px; border-radius: var(--pill); background: rgba(20,34,54,.55); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
@@ -327,6 +335,7 @@
       <div id="v3dCross"></div>
       <div id="v3dTopbar">
         <button id="btn3DExit">← 2Dに戻る</button>
+        <button id="btn3DSplit" class="sub" title="左に2Dの編集画面、右に3Dを並べて表示します">⇔ 2画面</button>
         <label>天井の高さ <input type="range" id="v3dCeil" min="220" max="300" step="5" value="240"><span class="v3dVal" id="v3dCeilVal">240cm</span></label>
         <label>目線の高さ <input type="range" id="v3dEye" min="100" max="185" step="5" value="150"><span class="v3dVal" id="v3dEyeVal">150cm</span></label>
         <label title="大きくすると広角になり、部屋全体が見渡せます">視野角 <input type="range" id="v3dFov" min="45" max="105" step="5" value="70"><span class="v3dVal" id="v3dFovVal">70°</span></label>
@@ -649,7 +658,7 @@ document.getElementById("zoomOut").onclick=()=>zoomCenter(1/1.15);
 // ホイールでカーソル中心ズーム
 stageWrap.addEventListener("wheel",(e)=>{
   if(document.getElementById("compareView").classList.contains("show")) return; // 比較ビュー中は通常スクロール
-  if(view3dShown()) return; // 3Dプレビュー中は2Dズームしない
+  if(block2D()) return; // 3Dプレビュー中（2画面モード以外）は2Dズームしない
   e.preventDefault();
   const rect=stageWrap.getBoundingClientRect();
   zoomAt(e.deltaY<0?1.12:1/1.12, e.clientX-rect.left, e.clientY-rect.top);
@@ -658,7 +667,7 @@ stageWrap.addEventListener("wheel",(e)=>{
 // 中ボタン ドラッグでキャンバス全体を移動（引き＝縮小時でも可）
 stageWrap.addEventListener("mousedown",(e)=>{
   if(e.button!==1) return;            // 中ボタンのみ
-  if(view3dShown()) return;           // 3Dプレビュー中は対象外
+  if(block2D()) return;               // 3Dプレビュー中（2画面モード以外）は対象外
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, opx=panX, opy=panY;
   const prevCursor=stageWrap.style.cursor; stageWrap.style.cursor="grabbing";
@@ -920,6 +929,7 @@ function refreshOverlap(){
   const f=curF();
   if(f&&f.chair){ const st=document.getElementById("chairStatus"); st.innerHTML=f._chairBlocked?`<span class="warn">✕ 椅子を引くスペース不足</span>`:`<span class="ok">✓ 椅子を引けます</span>`; }
   scheduleSaveWorking();
+  notify3DChanged();
 }
 function relayoutAll(){ furns.forEach(layoutFurn); drawGrid(); refreshOverlap(); }
 
@@ -940,7 +950,7 @@ function loadFromObj(d){
 // ----- 作業状態の自動保存（リロードで復元）-----
 function saveWorking(){ localStorage.setItem(LS_KEY, JSON.stringify(currentLayoutObj())); }
 var _saveTimer=null, remoteApplyAt=0;
-function scheduleSaveWorking(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>{ saveWorking(); autoSaveToCurrentPlan(); if(Date.now()-remoteApplyAt>1200) syncPush(); },400); }
+function scheduleSaveWorking(){ notify3DChanged(); clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>{ saveWorking(); autoSaveToCurrentPlan(); if(Date.now()-remoteApplyAt>1200) syncPush(); },400); }
 function loadLayout(silent){
   const raw=localStorage.getItem(LS_KEY); if(!raw){ if(!silent) alert("保存データがありません"); return; }
   loadFromObj(JSON.parse(raw));
@@ -1189,6 +1199,7 @@ function addFurnToLayout(layout, key){
   layout.furns.push(furnFromType(p, (imgW*sc)/2, (imgH*sc)/2));
 }
 function openCompare(){
+  if(view3dShown()&&_v3dApi) _v3dApi.close();   // 比較ビューと3Dは同時に出さない
   const grid=document.getElementById("compareGrid"); grid.innerHTML="";
   const slots=getSlots(); const names=Object.keys(slots);
   const dispW=parseInt(document.getElementById("cmpSize").value,10);
@@ -1286,7 +1297,7 @@ document.getElementById("furnModal").addEventListener("mousedown",(e)=>{ if(e.ta
 stageWrap.addEventListener("mousedown",(e)=>{
   if(e.button!==0) return;
   if(document.getElementById("compareView").classList.contains("show")) return; // 比較ビュー中は対象外
-  if(view3dShown()) return; // 3Dプレビュー中は対象外
+  if(block2D()) return; // 3Dプレビュー中（2画面モード以外）は対象外
   if(e.target.closest && e.target.closest(".furn")) return;                       // 家具の上は解除しない
   selectedId=null; furns.forEach(f=>document.getElementById("furn_"+f.id)?.classList.remove("selected"));
   document.getElementById("propBox").style.display="none";
@@ -1371,6 +1382,21 @@ const PLAN3D = {
 };
 
 function view3dShown(){ const v=document.getElementById("view3d"); return !!v && v.classList.contains("show"); }
+// 2画面モード中は、左半分の2D編集画面を今までどおり操作できるようにする
+function view3dSplit(){ const v=document.getElementById("view3d"); return !!v && v.classList.contains("split"); }
+function block2D(){ return view3dShown() && !view3dSplit(); }
+// 2Dで配置を変えたときに3D側へ知らせるための受け口（3Dを開いたときに登録される）
+var on3DChanged=null;
+function notify3DChanged(){ if(on3DChanged){ try{ on3DChanged(); }catch(e){ console.error("3D同期エラー:",e); } } }
+// 間取り図を、使える横幅にちょうど収まるように表示し直す
+function fit2DTo(availW){
+  if(!imgW||!imgH) return;
+  const availH=stageWrap.clientHeight;
+  zoom=Math.min(1,(availW-20)/imgW,(availH-20)/imgH);
+  if(!isFinite(zoom)||zoom<=0) zoom=0.7;
+  panX=(availW-imgW*zoom)/2; panY=(availH-imgH*zoom)/2;
+  applyZoom();
+}
 
 let _v3dApi = null;
 async function ensure3D(){
@@ -2253,21 +2279,50 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     if(type==="stool") return { lz:0,        eye:117, name:f.name };
     return null;
   }
+  // 家具の3Dは差分更新する。形が変わったものだけ作り直し、
+  // 位置・向きだけの変更は動かすだけにするので、2Dでドラッグ中も滑らかに追従する。
+  const furnNodes=new Map();
+  function furnSig(f){
+    return [f.name,f.w,f.d,f.color,f.shape,f.cornerR,f.semiDir,f.semiStraight,f.lcorner,f.lw,f.ld,f.hCm||0,f.chair?1:0,f.chairDir].join("|");
+  }
+  function disposeNode(node){
+    furnGroup.remove(node.group);
+    node.group.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
+  }
   function rebuildFurniture(){
-    while(furnGroup.children.length){
-      const c=furnGroup.children.pop();
-      c.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
-      furnGroup.remove(c);
-    }
-    furnSegs=[];
+    const seen=new Set();
     furns.forEach(f=>{
-      try{ furnGroup.add(build3DFurniture(f)); }catch(err){ console.error("家具3D化エラー:",err,f); }
-      if(!isChairLike(f)){
-        const cs=corners(f.xCm,f.yCm,f.w,f.d,f.angle||0);
-        for(let i=0;i<4;i++){ const a=cs[i],b=cs[(i+1)%4]; furnSegs.push({x1:a.x,z1:a.y,x2:b.x,z2:b.y,half:0}); }
+      seen.add(f.id);
+      const sig=furnSig(f);
+      let node=furnNodes.get(f.id);
+      if(!node || node.sig!==sig){
+        if(node) disposeNode(node);
+        let g;
+        try{ g=build3DFurniture(f); }catch(err){ console.error("家具3D化エラー:",err,f); g=new THREE.Group(); }
+        furnGroup.add(g);
+        furnNodes.set(f.id,{group:g,sig});
+      } else {
+        node.group.position.set(f.xCm, floorLevelAt(f.xCm,f.yCm), f.yCm);
+        node.group.rotation.y=-(f.angle||0)*Math.PI/180;
       }
     });
+    for(const [id,node] of furnNodes){
+      if(!seen.has(id)){ disposeNode(node); furnNodes.delete(id); }
+    }
+    // 当たり判定
+    furnSegs=[];
+    furns.forEach(f=>{
+      if(isChairLike(f)) return;
+      const cs=corners(f.xCm,f.yCm,f.w,f.d,f.angle||0);
+      for(let i=0;i<4;i++){ const a=cs[i],b=cs[(i+1)%4]; furnSegs.push({x1:a.x,z1:a.y,x2:b.x,z2:b.y,half:0}); }
+    });
   }
+  // 2D側の変更通知。連続で来ても短くまとめて反映する
+  let syncTimer=null;
+  on3DChanged=()=>{
+    if(!view3dShown()||syncTimer) return;
+    syncTimer=setTimeout(()=>{ syncTimer=null; if(view3dShown()) rebuildFurniture(); },50);
+  };
 
   // --- 床の高さ（土間・バルコニーの段差） ---
   function inRect(x,z,r){ return x>=C(r[0])&&x<=C(r[2])&&z>=C(r[1])&&z<=C(r[3]); }
@@ -2286,7 +2341,9 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   let topView=false, savedCam=null;
   let fallbackLook=false;   // ポインターロックが本当に使えない環境でのみドラッグ視点に切り替える
   let wantLock=false, everLocked=false, lockedNow=false, lockTimer=null;
+  const HELP_LOCK="WASD: 移動｜矢印キー・マウス: 見回す｜E/クリック: ドアの開閉・座る｜Shift: 走る｜M: 上空から見る｜Esc: カーソルを出す";
   const HELP_DRAG="WASD: 移動｜矢印キー・ドラッグ: 見回す｜E/クリック: ドアの開閉・座る｜Shift: 走る｜M: 上空から見る";
+  const HELP_SPLIT="左の間取り図で動かすと3Dに即反映｜WASD: 移動｜矢印キー・ドラッグ: 見回す｜E: ドア・座る";
   function tryLock(){
     if(fallbackLook||!view3dShown()||closing) return;
     wantLock=true; attemptLock(0);
@@ -2325,7 +2382,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   document.addEventListener("mouseup",()=>{ dragging=false; });
   canvas.addEventListener("click",e=>{
     if(!view3dShown()||controls.isLocked) return;
-    if(fallbackLook&&dragDist<6) interact();
+    if((fallbackLook||view3dSplit())&&dragDist<6) interact();
   });
   const BODY_R=20, WALK=250;
   const pos={x:C(157),z:C(225)};       // スタートは玄関
@@ -2474,7 +2531,9 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     if(!view3dShown()||!controls.isLocked||e.button!==0) return;
     interact();
   });
-  canvas.addEventListener("click",()=>{ if(view3dShown()&&!controls.isLocked&&!fallbackLook) tryLock(); });
+  // 2画面モードではマウスカーソルを固定しない（左の2Dを操作できなくなるため）。
+  // 見回しはドラッグと矢印キーで行う。
+  canvas.addEventListener("click",()=>{ if(view3dShown()&&!view3dSplit()&&!controls.isLocked&&!fallbackLook) tryLock(); });
   document.querySelector("#v3dResume .msg").addEventListener("click",tryLock);
   controls.addEventListener("lock",()=>{ lockedNow=true; everLocked=true; wantLock=true; clearTimeout(lockTimer); document.getElementById("v3dResume").style.display="none"; });
   controls.addEventListener("unlock",()=>{
@@ -2494,6 +2553,27 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
 
   let closing=false;
   document.getElementById("btn3DExit").onclick=()=>{ api.close(); };
+
+  // ===== 2画面モード（左に2Dの編集画面、右に3D）=====
+  function setSplit(on){
+    view.classList.toggle("split",on);
+    document.getElementById("btn3DSplit").textContent = on? "□ 3Dだけ表示" : "⇔ 2画面";
+    document.getElementById("btn3DSplit").classList.toggle("on",on);
+    if(on){
+      try{ controls.unlock(); }catch(e){}
+      wantLock=false; clearTimeout(lockTimer);
+      document.getElementById("v3dResume").style.display="none";
+      document.getElementById("v3dHelp").textContent=HELP_SPLIT;
+      fit2DTo(stageWrap.clientWidth/2);      // 左半分に間取り図を収め直す
+      rebuildFurniture();
+    } else {
+      document.getElementById("v3dHelp").textContent=fallbackLook?HELP_DRAG:HELP_LOCK;
+      document.getElementById("v3dResume").style.display=(fallbackLook||controls.isLocked)?"none":"flex";
+      fit2DTo(stageWrap.clientWidth);
+    }
+    resize();
+  }
+  document.getElementById("btn3DSplit").onclick=()=>setSplit(!view3dSplit());
 
   // スライダー
   let ceilTimer=null;
@@ -2588,7 +2668,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       resize();
       renderer.setAnimationLoop(()=>tick());   // 引数を渡さない（時刻が dt として入るのを防ぐ）
       wantLock=false; clearTimeout(lockTimer);
-      document.getElementById("v3dResume").style.display=fallbackLook?"none":"flex";
+      if(view3dSplit()) fit2DTo(stageWrap.clientWidth/2);
+      document.getElementById("v3dResume").style.display=(fallbackLook||view3dSplit())?"none":"flex";
     },
     close(){
       closing=true;
@@ -2598,6 +2679,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       document.getElementById("view3d").classList.remove("show");
       document.getElementById("v3dResume").style.display="none";
       setPrompt("");
+      fit2DTo(stageWrap.clientWidth);   // 間取り図を全幅に戻す
     },
   };
   return api;
