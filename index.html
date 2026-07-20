@@ -274,7 +274,16 @@
         <button class="sub" id="pRotR">⟳ 右90°</button>
         <span class="badge" id="pAngle">0°</span>
       </div>
+      <div class="row" id="pBaseRow"><label>置く高さ</label><input type="number" id="pBase" step="5" min="0"><span class="hint" style="margin:0;">cm（棚・机の上に置くとき）</span></div>
       <div class="row"><label>色</label><input type="color" id="pColor"></div>
+      <div class="row" id="pCushRow"><label>クッション</label>
+        <input type="color" id="pCush0" title="左・奥"><input type="color" id="pCush1" title="左・手前"><input type="color" id="pCush2" title="右">
+        <span class="hint" style="margin:0;">左2つ / 右1つ</span>
+      </div>
+      <div class="row" id="pPicRow"><label>絵</label>
+        <select id="pPic" style="flex:1;"></select>
+      </div>
+      <div class="row" id="pPicFileRow"><button id="pPicFile" class="sub full" style="margin:0;">画像ファイルを選ぶ</button><input type="file" id="pPicInput" accept="image/*" style="display:none;"></div>
       <div style="border-top:1px solid #3a4150; margin:8px 0; padding-top:8px;">
         <div class="row"><label style="min-width:auto;"><input type="checkbox" id="pChair"> 椅子を引くスペースを判定</label></div>
         <div id="chairOpts">
@@ -319,7 +328,18 @@
     </div>
 
     <div class="section">
-      <h2>⑥ 共有（リアルタイム）</h2>
+      <h2>⑥ 3Dの内装</h2>
+      <div class="row"><label>壁の色</label><input type="color" id="dcWall"><span class="hint" style="margin:0;">全部の壁・天井</span></div>
+      <div class="row"><label>ドアの色</label><input type="color" id="dcDoor"><span class="hint" style="margin:0;">全部のドア・枠</span></div>
+      <button id="btnDecorReset" class="full sub" style="margin-top:4px;">色を元に戻す</button>
+      <div style="border-top:1px solid var(--glass-line); margin:10px 0 6px; padding-top:8px;">
+        <div class="hint" style="margin:0 0 6px;">窓の飾り（バルコニーの掃き出し窓はカーテンのみ）</div>
+        <div id="winDecorList"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>⑦ 共有（リアルタイム）</h2>
       <div class="row"><span class="badge" id="syncStatus">オフライン</span></div>
       <div class="row"><label>ルームID</label><input type="text" id="roomId" placeholder="例: yana-airi-home"></div>
       <button id="btnConnect" class="full sub">このルームに接続</button>
@@ -460,6 +480,12 @@ const PRESETS = [
   { key:"shelf",  name:"棚/収納", w:80, d:40, color:"#d4b89a" },
   { key:"fridge", name:"冷蔵庫", w:60, d:65, color:"#cfe8ff" },
   { key:"washer", name:"洗濯機", w:60, d:60, color:"#cfe8ff" },
+  { key:"dresser",name:"ドレッサー", w:90, d:45, color:"#f0dde3", hCm:75 },
+  { key:"chair_office",name:"オフィスチェア", w:62, d:62, color:"#454a52" },
+  { key:"frame",  name:"額縁", w:60, d:5, color:"#8a6b4a", hCm:45, baseY:120 },
+  { key:"printer",name:"プリンター", w:45, d:38, color:"#eceae6", hCm:25 },
+  { key:"printer3d",name:"3Dプリンター(A1 mini)", w:35, d:35, color:"#33383f", hCm:40 },
+  { key:"pc_tower",name:"デスクトップPC", w:22, d:45, color:"#2a2e35", hCm:45 },
   { key:"plant",  name:"観葉植物", w:40, d:40, color:"#5ba05e", shape:"oval", hCm:130 },
   { key:"plant_s",name:"観葉植物(小)", w:25, d:25, color:"#6bb06a", shape:"oval", hCm:55 },
   { key:"wall",   name:"障害物/壁", w:50, d:50, color:"#9aa0a6" },
@@ -470,6 +496,12 @@ const PRESETS = [
 function typeOf(f){
   const n=f.name||"";
   if(/観葉|植物|グリーン|鉢植|パキラ|ウンベラータ|モンステラ|サンスベリア|ガジュマル/.test(n)) return "plant";
+  if(/額縁|絵|ポスター|アート|写真立/.test(n)) return "frame";
+  if(/ドレッサー|化粧台|鏡台/.test(n)) return "dresser";
+  if(/オフィスチェア|ワークチェア|デスクチェア/.test(n)) return "officechair";
+  if(/3Dプリンタ|A1\s*mini/i.test(n)) return "printer3d";
+  if(/プリンタ/.test(n)) return "printer";
+  if(/デスクトップ|PCタワー|パソコン本体|タワーPC/i.test(n)) return "pctower";
   if(/冷蔵庫/.test(n)) return "fridge";
   if(/洗濯/.test(n)) return "washer";
   if(/テレビ|TV/i.test(n)) return "tv";
@@ -484,7 +516,7 @@ function typeOf(f){
   if(/壁|障害|柱/.test(n)) return "pillar";
   return "generic";
 }
-const typeH={ plant:130, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
+const typeH={ plant:130, frame:45, dresser:75, officechair:110, printer:25, printer3d:40, pctower:45, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
 // 高さを指定していないときの既定の高さ
 function defaultHeight(f,type){
   type=type||typeOf(f);
@@ -492,7 +524,7 @@ function defaultHeight(f,type){
   return typeH[type]||70;
 }
 // 高さを自由に設定できる種類（ベッド・ソファ・椅子は形が複雑なので対象外）
-const HEIGHT_ADJUSTABLE=new Set(["plant","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
+const HEIGHT_ADJUSTABLE=new Set(["plant","frame","dresser","printer","printer3d","pctower","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
 function canSetHeight(f){
   const t=typeOf(f);
   if(HEIGHT_ADJUSTABLE.has(t)) return true;
@@ -500,6 +532,119 @@ function canSetHeight(f){
   return !!(f.shape && f.shape!=="rect" && f.shape!=="round" && t!=="table" && t!=="stool");
 }
 function heightOf(f,type){ return (f.hCm>0? f.hCm : defaultHeight(f,type)); }
+// ソファのクッション色（右に1つ・左に2つ）。未設定なら本体色から作る
+function cushionColors(f){
+  const c=(f.cushions&&f.cushions.length===3)? f.cushions.slice() : [null,null,null];
+  return c.map(x=>x||"");
+}
+
+// ===== 内装（壁・ドアの色、窓のカーテン）=====
+// 窓ごとの飾り。type: none / lace(レースのみ) / curtain(遮光＋レース) / blind(ブラインド)
+const WINDOW_LIST=[
+  { id:"wldk", name:"リビングの掃き出し窓", big:true },
+  { id:"w46",  name:"洋室4.6の掃き出し窓", big:true },
+  { id:"w61",  name:"洋室6.1の窓", big:false },
+  { id:"w46n", name:"洋室4.6の小窓", big:false },
+];
+function defaultDecor(){
+  return { wall:"#f3f0ea", door:"#b08a5e", win:{
+    wldk:{type:"curtain",color:"#d9cfc0"}, w46:{type:"curtain",color:"#d9cfc0"},
+    w61:{type:"curtain",color:"#d9cfc0"},  w46n:{type:"blind",color:"#e8e4dc"} } };
+}
+var decor=defaultDecor();
+var on3DDecor=null;   // 内装を変えたとき3D側を作り直すための受け口
+
+// 額縁に飾れる絵（キャンバスに手続きで描く）
+const ART_LIST=[
+  {key:"abst_blue", name:"抽象（ブルー）"},
+  {key:"abst_warm", name:"抽象（暖色）"},
+  {key:"mountain",  name:"山の風景"},
+  {key:"sea",       name:"海と空"},
+  {key:"botanical", name:"ボタニカル"},
+  {key:"arch",      name:"アーチ（北欧）"},
+  {key:"terrazzo",  name:"テラゾー"},
+  {key:"mono",      name:"モノクローム"},
+];
+function drawArt(key,g,W,H){
+  const R=(i)=>((Math.sin(i*12.9898)*43758.5453)%1+1)%1;   // 毎回同じ絵になる簡易乱数
+  g.fillStyle="#f6f3ec"; g.fillRect(0,0,W,H);
+  if(key==="abst_blue"||key==="abst_warm"){
+    const pal=key==="abst_blue"? ["#22467e","#4d86c4","#a9c8e8","#dfe9f3","#1b2a44"]
+                               : ["#c2542f","#e2924f","#f0c9a0","#f6e7d4","#7a3421"];
+    g.fillStyle=pal[3]; g.fillRect(0,0,W,H);
+    for(let i=0;i<7;i++){
+      g.fillStyle=pal[i%pal.length];
+      g.globalAlpha=.55+R(i)*0.4;
+      g.beginPath();
+      g.ellipse(W*(0.15+R(i)*0.7), H*(0.15+R(i+9)*0.7), W*(0.08+R(i+3)*0.28), H*(0.06+R(i+5)*0.3), R(i+7)*3.14, 0, 6.3);
+      g.fill();
+    }
+    g.globalAlpha=1;
+  } else if(key==="mountain"){
+    const sky=g.createLinearGradient(0,0,0,H*0.72); sky.addColorStop(0,"#f3d9b1"); sky.addColorStop(1,"#e9edf2");
+    g.fillStyle=sky; g.fillRect(0,0,W,H);
+    g.fillStyle="#f7e2b8"; g.beginPath(); g.arc(W*0.72,H*0.26,W*0.09,0,6.3); g.fill();
+    const rid=(base,col,amp)=>{ g.fillStyle=col; g.beginPath(); g.moveTo(0,H);
+      for(let x=0;x<=W;x+=W/28){ g.lineTo(x, base - Math.abs(Math.sin(x/W*3.1+amp))*H*amp*0.55); }
+      g.lineTo(W,H); g.closePath(); g.fill(); };
+    rid(H*0.62,"#93a6b6",0.55); rid(H*0.74,"#5f7488",0.42); rid(H*0.86,"#374b5e",0.3);
+  } else if(key==="sea"){
+    const sky=g.createLinearGradient(0,0,0,H); sky.addColorStop(0,"#2f6ea8"); sky.addColorStop(0.5,"#a8cfe4"); sky.addColorStop(0.52,"#2b6b94"); sky.addColorStop(1,"#16405e");
+    g.fillStyle=sky; g.fillRect(0,0,W,H);
+    g.strokeStyle="rgba(255,255,255,.5)"; g.lineWidth=Math.max(1,W*0.006);
+    for(let i=0;i<12;i++){ const y=H*(0.56+i*0.036); g.beginPath(); g.moveTo(W*R(i)*0.4,y); g.lineTo(W*(0.35+R(i+4)*0.6),y); g.stroke(); }
+  } else if(key==="botanical"){
+    g.fillStyle="#f4f1e6"; g.fillRect(0,0,W,H);
+    g.strokeStyle="#5c7f52"; g.lineWidth=Math.max(1.4,W*0.008);
+    g.beginPath(); g.moveTo(W*0.5,H*0.94); g.quadraticCurveTo(W*0.46,H*0.5,W*0.53,H*0.1); g.stroke();
+    for(let i=0;i<9;i++){
+      const t=0.12+i*0.088, y=H*(0.9-t*0.85), x=W*(0.5+(i%2?0.02:-0.02));
+      const dir=i%2?1:-1, lw=W*(0.20-i*0.011), lh=H*0.075;
+      g.fillStyle=i%2?"#6f9463":"#567a4e";
+      g.beginPath(); g.ellipse(x+dir*lw*0.6, y, lw, lh, dir*0.5, 0, 6.3); g.fill();
+    }
+  } else if(key==="arch"){
+    g.fillStyle="#efe7dc"; g.fillRect(0,0,W,H);
+    const cols=["#d8a07a","#c9743f","#8f5a3c"];
+    for(let i=0;i<3;i++){
+      g.fillStyle=cols[i];
+      const w=W*(0.34-i*0.09), cx=W*0.5, top=H*(0.28+i*0.14);
+      g.beginPath(); g.moveTo(cx-w/2,H*0.88); g.lineTo(cx-w/2,top);
+      g.arc(cx,top,w/2,Math.PI,0); g.lineTo(cx+w/2,H*0.88); g.closePath(); g.fill();
+    }
+    g.fillStyle="#3d3733"; g.fillRect(0,H*0.88,W,H*0.05);
+  } else if(key==="terrazzo"){
+    g.fillStyle="#f1ece4"; g.fillRect(0,0,W,H);
+    const cols=["#d2695a","#3f6f8f","#e0b04a","#6b8f5e","#8a8f96","#2f3538"];
+    for(let i=0;i<130;i++){
+      g.fillStyle=cols[i%cols.length]; g.globalAlpha=.85;
+      const x=W*R(i), y=H*R(i+31), s=W*(0.012+R(i+7)*0.026);
+      g.save(); g.translate(x,y); g.rotate(R(i+13)*3.14);
+      g.beginPath(); g.moveTo(-s,0); g.lineTo(0,-s*0.7); g.lineTo(s*0.9,0.1*s); g.lineTo(0,s*0.8); g.closePath(); g.fill();
+      g.restore();
+    }
+    g.globalAlpha=1;
+  } else {   // mono
+    g.fillStyle="#eceae6"; g.fillRect(0,0,W,H);
+    g.fillStyle="#232527"; g.fillRect(W*0.12,H*0.12,W*0.34,H*0.5);
+    g.fillStyle="#8d9095"; g.fillRect(W*0.5,H*0.3,W*0.38,H*0.58);
+    g.strokeStyle="#232527"; g.lineWidth=Math.max(1.5,W*0.01);
+    g.beginPath(); g.arc(W*0.62,H*0.24,W*0.13,0,6.3); g.stroke();
+  }
+  g.strokeStyle="rgba(0,0,0,.10)"; g.lineWidth=Math.max(1,W*0.006); g.strokeRect(0,0,W,H);
+}
+function normalizeDecor(d){
+  const base=defaultDecor();
+  if(!d||typeof d!=="object") return base;
+  const out={ wall:d.wall||base.wall, door:d.door||base.door, win:{} };
+  WINDOW_LIST.forEach(w=>{
+    const s=(d.win&&d.win[w.id])||{};
+    let t=s.type||base.win[w.id].type;
+    if(w.big&&t==="blind") t="curtain";          // 掃き出し窓はカーテンのみ
+    out.win[w.id]={ type:t, color:s.color||base.win[w.id].color };
+  });
+  return out;
+}
 
 // 倍率: 画像1pxが何cmか。洋室6.1の左壁(赤点間)=360cm → 約450px なので 0.80 で固定
 const FIXED_SCALE = 0.80;
@@ -766,7 +911,8 @@ document.getElementById("btnAdd").onclick=()=>{
 function furnFromType(p, xCm, yCm){
   return { name:p.name, w:p.w, d:p.d, angle:0, color:p.color, xCm, yCm,
     shape:p.shape||"rect", cornerR:p.cornerR||0, semiDir:p.semiDir||"bottom", semiStraight:p.semiStraight||0,
-    lcorner:p.lcorner||"tr", lw:p.lw||0, ld:p.ld||0, hCm:p.hCm||0,
+    lcorner:p.lcorner||"tr", lw:p.lw||0, ld:p.ld||0, hCm:p.hCm||0, baseY:p.baseY||0,
+    cushions:(p.cushions?p.cushions.slice():null), pic:p.pic||"",
     chair:!!p.chair, chairDir:"front", chairDepth:70 };
 }
 
@@ -868,6 +1014,29 @@ function fillPropPanel(f){
   if(canH) document.getElementById("pH").value=Math.round(heightOf(f));
   document.getElementById("pAngle").textContent=(f.angle||0)+"°";
   document.getElementById("pColor").value=rgbToHex(f.color);
+  // 置く高さ（棚や机の上に載せる）
+  document.getElementById("pBase").value=Math.round(f.baseY||0);
+  // ソファのクッション色（左2つ・右1つ）
+  const isSofa=(typeOf(f)==="sofa");
+  document.getElementById("pCushRow").style.display=isSofa?"flex":"none";
+  if(isSofa){
+    const cs=cushionColors(f), base=rgbToHex(f.color);
+    [0,1,2].forEach(i=>{ document.getElementById("pCush"+i).value=cs[i]||base; });
+  }
+  // 額縁の絵
+  const isFrame=(typeOf(f)==="frame");
+  document.getElementById("pPicRow").style.display=isFrame?"flex":"none";
+  document.getElementById("pPicFileRow").style.display=isFrame?"flex":"none";
+  if(isFrame){
+    const sel=document.getElementById("pPic");
+    if(!sel.options.length){ ART_LIST.forEach(a=>{ const o=document.createElement("option"); o.value=a.key; o.textContent=a.name; sel.appendChild(o); }); }
+    const isFile=(f.pic||"").startsWith("data:");
+    if(isFile){
+      let o=Array.from(sel.options).find(x=>x.value==="__file");
+      if(!o){ o=document.createElement("option"); o.value="__file"; o.textContent="選んだ画像"; sel.appendChild(o); }
+      sel.value="__file";
+    } else sel.value=f.pic||ART_LIST[0].key;
+  }
   document.getElementById("pChair").checked=!!f.chair;
   document.getElementById("pChairDir").value=f.chairDir||"front";
   document.getElementById("pChairDepth").value=(f.chairDepth!=null?f.chairDepth:70);
@@ -900,6 +1069,32 @@ document.getElementById("pW").oninput=e=>applyEdit(f=>f.w=parseFloat(e.target.va
 document.getElementById("pD").oninput=e=>applyEdit(f=>f.d=parseFloat(e.target.value)||1,true);
 document.getElementById("pH").oninput=e=>applyEdit(f=>f.hCm=Math.max(0,parseFloat(e.target.value)||0),false);
 document.getElementById("pColor").oninput=e=>applyEdit(f=>f.color=e.target.value,false);
+document.getElementById("pBase").oninput=e=>applyEdit(f=>f.baseY=Math.max(0,parseFloat(e.target.value)||0),false);
+[0,1,2].forEach(i=>{
+  document.getElementById("pCush"+i).oninput=e=>applyEdit(f=>{
+    const cs=cushionColors(f); cs[i]=e.target.value;
+    f.cushions=cs.map(c=>c||rgbToHex(f.color));
+  },false);
+});
+document.getElementById("pPic").onchange=e=>{ if(e.target.value!=="__file") applyEdit(f=>f.pic=e.target.value,false); };
+document.getElementById("pPicFile").onclick=()=>document.getElementById("pPicInput").click();
+document.getElementById("pPicInput").onchange=e=>{
+  const file=e.target.files&&e.target.files[0]; if(!file) return;
+  const img=new Image();
+  img.onload=()=>{
+    // 保存・共有データが重くならないよう、長辺400pxまで縮めて取り込む
+    const m=400, s=Math.min(1,m/Math.max(img.width,img.height));
+    const c=document.createElement("canvas");
+    c.width=Math.max(1,Math.round(img.width*s)); c.height=Math.max(1,Math.round(img.height*s));
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+    applyEdit(f=>f.pic=c.toDataURL("image/jpeg",0.72),false);
+    fillPropPanel(ctxSelFurn());
+    URL.revokeObjectURL(img.src);
+  };
+  img.onerror=()=>alert("画像を読み込めませんでした");
+  img.src=URL.createObjectURL(file);
+  e.target.value="";
+};
 document.getElementById("pRotL").onclick=()=>{ applyEdit(f=>f.angle=((f.angle||0)+270)%360,true); document.getElementById("pAngle").textContent=(ctxSelFurn()?.angle||0)+"°"; };
 document.getElementById("pRotR").onclick=()=>{ applyEdit(f=>f.angle=((f.angle||0)+90)%360,true); document.getElementById("pAngle").textContent=(ctxSelFurn()?.angle||0)+"°"; };
 document.getElementById("pChair").onchange=e=>{ applyEdit(f=>f.chair=e.target.checked,true); document.getElementById("chairOpts").style.display=e.target.checked?"block":"none"; };
@@ -970,13 +1165,15 @@ function relayoutAll(){ furns.forEach(layoutFurn); drawGrid(); refreshOverlap();
 
 // ===== レイアウトの入出力 =====
 function currentLayoutObj(){
-  return { scaleCmPerPx, furns:JSON.parse(JSON.stringify(furns)), nextId, calibCm:document.getElementById("calibCm").value };
+  return { scaleCmPerPx, furns:JSON.parse(JSON.stringify(furns)), nextId, calibCm:document.getElementById("calibCm").value,
+           decor:JSON.parse(JSON.stringify(decor)) };
 }
 function loadFromObj(d){
   furns.forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); });
   scaleCmPerPx=d.scaleCmPerPx||FIXED_SCALE; furns=d.furns||[]; nextId=d.nextId||1;
   furns.forEach(f=>{ if(f.id>=nextId) nextId=f.id+1; });
   if(d.calibCm) document.getElementById("calibCm").value=d.calibCm;
+  decor=normalizeDecor(d.decor); initDecorUI(); if(on3DDecor) on3DDecor();
   document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2);
   selectedId=null; document.getElementById("propBox").style.display="none";
   updateScaleInfo(); furns.forEach(renderFurn); drawGrid(); refreshOverlap();
@@ -1350,6 +1547,38 @@ function initAccordion(){
   document.getElementById("btnExpandAll").onclick=()=>document.querySelectorAll("#panel .section").forEach(s=>setSectionCollapsed(s,false));
 }
 initAccordion();
+
+// ===== 内装（壁・ドアの色、窓の飾り）のUI =====
+function onDecorChanged(){ scheduleSaveWorking(); if(on3DDecor){ try{ on3DDecor(); }catch(e){ console.error("内装反映エラー:",e); } } }
+function renderWinDecor(){
+  const box=document.getElementById("winDecorList"); if(!box) return; box.innerHTML="";
+  WINDOW_LIST.forEach(w=>{
+    const wrap=document.createElement("div"); wrap.style.marginBottom="7px";
+    const lb=document.createElement("div"); lb.className="hint"; lb.style.margin="0 0 3px"; lb.textContent=w.name; wrap.appendChild(lb);
+    const row=document.createElement("div"); row.className="row"; row.style.margin="0";
+    const sel=document.createElement("select"); sel.style.flex="1";
+    const opts=[["none","なし"],["lace","レースのみ"],["curtain","カーテン（遮光＋レース）"]];
+    if(!w.big) opts.push(["blind","ブラインド"]);
+    opts.forEach(o=>{ const op=document.createElement("option"); op.value=o[0]; op.textContent=o[1]; sel.appendChild(op); });
+    sel.value=decor.win[w.id].type;
+    sel.onchange=()=>{ decor.win[w.id].type=sel.value; onDecorChanged(); };
+    row.appendChild(sel);
+    const col=document.createElement("input"); col.type="color"; col.value=decor.win[w.id].color;
+    col.oninput=()=>{ decor.win[w.id].color=col.value; onDecorChanged(); };
+    row.appendChild(col);
+    wrap.appendChild(row); box.appendChild(wrap);
+  });
+}
+function initDecorUI(){
+  const dw=document.getElementById("dcWall"), dd=document.getElementById("dcDoor");
+  if(!dw) return;
+  dw.value=decor.wall; dd.value=decor.door;
+  dw.oninput=e=>{ decor.wall=e.target.value; onDecorChanged(); };
+  dd.oninput=e=>{ decor.door=e.target.value; onDecorChanged(); };
+  document.getElementById("btnDecorReset").onclick=()=>{ decor=defaultDecor(); initDecorUI(); onDecorChanged(); };
+  renderWinDecor();
+}
+initDecorUI();
 // 家具を選ぶと「③ 選択中の家具」が畳まれていても自動で開く
 const _origFillProp=fillPropPanel;
 fillPropPanel=function(f){
@@ -1397,11 +1626,14 @@ const PLAN3D = {
     { id:"ent",   kind:"hinged",     center:[158,167],  w:101, h:198, hinge:"min", swing:-1, label:"玄関ドア", style:"entrance" },
     { id:"ldk",   kind:"hinged",     center:[390,225],  w:101, h:198, hinge:"min", swing:+1, label:"リビングのドア", style:"glass" },
     { id:"toilet",kind:"hinged",     center:[331,282],  w:87,  h:198, hinge:"max", swing:-1, label:"トイレのドア" },
-    { id:"cl61",  kind:"double",     center:[98,400],   w:102, h:198, swing:+1,  label:"クローゼット(洋室6.1)" },
+    // 洋室6.1のクローゼットは、左側へ「く」の字に折れる折れ戸
+    { id:"cl61",  kind:"bifold",     center:[98,400],   w:102, h:198, fold:"min", swing:+1, label:"クローゼット(洋室6.1)" },
     { id:"y61",   kind:"hinged",     center:[390,458],  w:101, h:198, hinge:"min", swing:-1, label:"洋室6.1のドア" },
     { id:"wash",  kind:"hinged",     center:[800,516],  w:86,  h:198, hinge:"min", swing:-1, label:"洗面室のドア" },
     { id:"bath",  kind:"hinged",     center:[917,342],  w:89,  h:190, hinge:"max", swing:+1, label:"浴室のドア", style:"bath" },
-    { id:"cl46",  kind:"double",     center:[1004,516], w:144, h:198, swing:+1,  label:"クローゼット(洋室4.6)" },
+    // 洋室4.6のクローゼットは、左が手前に開く扉／右が「く」の字に折れる折れ戸
+    { id:"cl46a", kind:"hinged",     center:[953,516],  w:43,  h:198, hinge:"min", swing:+1, label:"クローゼット(洋室4.6)の開き戸" },
+    { id:"cl46b", kind:"bifold",     center:[1025,516], w:100, h:198, fold:"max",  swing:+1, label:"クローゼット(洋室4.6)の折れ戸" },
     { id:"slide", kind:"slidewood",  center:[855,747.5],w:229, h:196, label:"リビングと洋室4.6の引き戸" },
     // 洋室4.6の北にある小さめの開き窓（幅56cm。図面では外側に開く弧が描かれている）
     { id:"w46n",  kind:"hinged",     center:[1165,516], w:70,  h:105, sill:85, hinge:"max", swing:-1, label:"洋室4.6の窓", style:"window" },
@@ -1535,14 +1767,14 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     }
   });
   woodFloorTex.repeat.set(1/180,1/180);
-  const woodDoorTex = makeTex(256,256,(g)=>{       // ドア用の木目（縦方向）
-    g.fillStyle="#b08a5e"; g.fillRect(0,0,256,256);
+  // ドア用の木目は「白黒」で作る。色は decor.door を掛けて出すので好きな色に変えられる
+  const woodDoorTex = makeTex(256,256,(g)=>{
+    g.fillStyle="#ffffff"; g.fillRect(0,0,256,256);
     for(let x=0;x<256;x+=8){
-      const tone=176+((x*31)%40)-20;
-      g.fillStyle=`rgba(${tone},${(tone*0.78)|0},${(tone*0.53)|0},.6)`;
-      g.fillRect(x,0,6,256);
+      const t=232+((x*31)%36)-18;
+      g.fillStyle=`rgba(${t},${t},${t},.75)`; g.fillRect(x,0,6,256);
     }
-    g.strokeStyle="rgba(100,66,36,.35)";
+    g.strokeStyle="rgba(150,150,150,.45)"; g.lineWidth=1;
     for(let i=0;i<10;i++){ g.beginPath(); g.moveTo((i*53)%256,0); g.bezierCurveTo((i*53)%256+14,80,(i*53)%256-10,180,(i*53)%256+6,256); g.stroke(); }
   });
   const tileWhiteTex = makeTex(256,256,(g)=>{      // 白タイル（100cm四方ぶん）
@@ -1584,7 +1816,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     tileDark:  new THREE.MeshStandardMaterial({ map:tileDarkTex, roughness:.8, side:THREE.DoubleSide }),
     concrete:  new THREE.MeshStandardMaterial({ map:concreteTex, roughness:.95, side:THREE.DoubleSide }),
     facade:    new THREE.MeshStandardMaterial({ color:0xd8d4cc, roughness:.9 }),
-    woodDoor:  new THREE.MeshStandardMaterial({ map:woodDoorTex, roughness:.7 }),
+    woodDoor:  new THREE.MeshStandardMaterial({ map:woodDoorTex, color:0xb08a5e, roughness:.7 }),
     doorFrame: new THREE.MeshStandardMaterial({ color:0x9a7a55, roughness:.75 }),
     entDoor:   new THREE.MeshStandardMaterial({ color:0x4a5a6e, roughness:.55, metalness:.35 }),
     alum:      new THREE.MeshStandardMaterial({ color:0xd9dde0, roughness:.4, metalness:.4 }),
@@ -1597,6 +1829,16 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     counterTop:new THREE.MeshStandardMaterial({ color:0xe8e6e0, roughness:.35 }),
   };
   const floorMats = { wood:M.woodFloor, tileWhite:M.tileWhite, tileBath:M.tileBath, tileDark:M.tileDark, concrete:M.concrete };
+  // 壁・ドアの色を内装設定から反映する（材質の色を変えるだけなので作り直し不要）
+  function applyDecorMaterials(){
+    const w=new THREE.Color(decor.wall||"#f3f0ea");
+    M.wall.color.copy(w);
+    M.ceil.color.copy(w).lerp(new THREE.Color(0xffffff),0.35);
+    const d=new THREE.Color(decor.door||"#b08a5e");
+    M.woodDoor.color.copy(d);
+    M.doorFrame.color.copy(d).multiplyScalar(0.86);
+  }
+  applyDecorMaterials();
 
   // --- 空・太陽・外の景色 ---
   const sky = new THREE.Mesh(
@@ -1870,6 +2112,16 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const hd2=doorHandle(); hd2.position.set(w-9,95,-3.5); g.add(hd2);
     return g;
   }
+  // 折れ戸・クローゼット用の平らな板（handle=true で取っ手つき）
+  function makeFlatPanel(w,h,handle){
+    const g=new THREE.Group();
+    const p=new THREE.Mesh(new THREE.BoxGeometry(w,h-2,3.2), M.woodDoor);
+    p.position.set(w/2,h/2,0); p.castShadow=true; p.userData.isDoor=true; g.add(p);
+    const gr=new THREE.Mesh(new THREE.BoxGeometry(Math.max(4,w-12),3,3.6), M.doorFrame);   // 浅い溝を1本
+    gr.position.set(w/2,h*0.62,0); gr.userData.isDoor=true; g.add(gr);
+    if(handle){ const hd=new THREE.Mesh(new THREE.BoxGeometry(2.5,16,2.5),M.alum); hd.position.set(Math.max(3,w-6),h*0.5,2.4); hd.userData.isDoor=true; g.add(hd); }
+    return g;
+  }
   // 引き戸パネル（木枠＋不透明な面材）。handle=true で引手を付ける
   function makeShoji(w,h,handle){
     const g=new THREE.Group();
@@ -1947,6 +2199,31 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
           this.pivots.push(pv); this.group.add(pv);
         });
       }
+      else if(this.kind==="bifold"){
+        // 折れ戸：2枚の板が「く」の字に折れながら片側に寄る（クローゼット）
+        const foldAtMax=(this.op.fold==="max");
+        const H = foldAtMax? B : A;                        // 折れ込む側の端
+        const along = foldAtMax? {x:-U.x,z:-U.z} : U;      // 閉じているときの板の向き
+        const pw=(w-2)/2;
+        this.pivotA=new THREE.Group();
+        this.pivotA.position.set(H.x,sill,H.z);
+        const yawA=Math.atan2(-along.z,along.x);
+        this.closedYawA=yawA; this.pivotA.rotation.y=yawA;
+        // 手前（swingの向き）へ折れるような回転の符号を求める
+        const openDir={x:N.x*swing, z:N.z*swing};
+        const sgn=Math.sign(-Math.sin(yawA)*openDir.x - Math.cos(yawA)*openDir.z) || 1;
+        this.deltaA=sgn*THREE.MathUtils.degToRad(86);
+        const leafA=makeFlatPanel(pw,h);
+        leafA.position.x=1;
+        this.pivotA.add(leafA);
+        this.pivotB=new THREE.Group();
+        this.pivotB.position.x=pw+1;
+        const leafB=makeFlatPanel(pw,h,true);
+        leafB.position.x=0.5;
+        this.pivotB.add(leafB);
+        this.pivotA.add(this.pivotB);
+        this.group.add(this.pivotA);
+      }
       else if(this.kind==="slidewood"){
         // 片引き戸：s1側（リビングから見て右）の1枚だけがスライドし、s0側の1枚は固定
         const pw=w/2+3, rail=3.4, startS=w-pw;
@@ -1992,6 +2269,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       else return;
       const e=easeInOut(this.t);
       if(this.kind==="hinged"){ this.pivot.rotation.y=this.closedYaw+this.openDelta*e; }
+      else if(this.kind==="bifold"){ this.pivotA.rotation.y=this.closedYawA+this.deltaA*e; this.pivotB.rotation.y=-2*this.deltaA*e; }
       else if(this.kind==="double"){ this.pivots.forEach(pv=>{ pv.rotation.y=pv.userData.closedYaw+pv.userData.delta*e; }); }
       else { this.panels.forEach(p=>{ p.position.copy(p.userData.closed).addScaledVector(p.userData.slide,e); }); }
     }
@@ -2046,6 +2324,108 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
         if(o.op.kind!=="window") doorList.push(new Door3D(o,wi));
       });
     });
+  }
+
+  // ===== 窓の飾り（カーテン・レース・ブラインド）=====
+  function openingGeom(id){
+    for(const w of PLAN3D.walls){
+      const wi=wallInfo(w);
+      for(const o of openingsOn(w,wi)){
+        if(o.op.id!==id) continue;
+        const U = wi.horiz? {x:1,z:0} : {x:0,z:1};
+        const N = wi.horiz? {x:0,z:1} : {x:1,z:0};
+        const A = wi.horiz? {x:wi.sx+o.s0, z:wi.az} : {x:wi.ax, z:wi.sz+o.s0};
+        return { A,U,N, wcm:o.s1-o.s0, h:o.h, sill:o.sill||0, t:wi.t, horiz:wi.horiz };
+      }
+    }
+    return null;
+  }
+  function pointInPoly(x,z,polyPx){
+    let inside=false;
+    for(let i=0,j=polyPx.length-1;i<polyPx.length;j=i++){
+      const xi=C(polyPx[i][0]), zi=C(polyPx[i][1]), xj=C(polyPx[j][0]), zj=C(polyPx[j][1]);
+      if(((zi>z)!==(zj>z)) && (x < (xj-xi)*(z-zi)/(zj-zi)+xi)) inside=!inside;
+    }
+    return inside;
+  }
+  function isIndoor(x,z){
+    for(const r of PLAN3D.rooms){
+      if(r.outside) continue;
+      if(r.rect && inRect(x,z,r.rect)) return true;
+      if(r.poly && pointInPoly(x,z,r.poly)) return true;
+    }
+    return false;
+  }
+  // ひだのある布。opacity<1 でレースになる
+  function fabricPanel(wcm,hcm,color,opacity,folds){
+    const seg=Math.max(10,Math.round(wcm/6));
+    const geo=new THREE.PlaneGeometry(wcm,hcm,seg,1);
+    const pos=geo.attributes.position;
+    for(let i=0;i<pos.count;i++){
+      const x=pos.getX(i);
+      pos.setZ(i, Math.sin(((x+wcm/2)/wcm)*Math.PI*2*folds)*2.8);
+    }
+    pos.needsUpdate=true; geo.computeVertexNormals();
+    const m=new THREE.Mesh(geo,new THREE.MeshStandardMaterial({
+      color, roughness:.94, side:THREE.DoubleSide, transparent:opacity<1, opacity }));
+    m.castShadow=(opacity>0.7);
+    return m;
+  }
+  function blindMesh(wcm,hcm,color){
+    const geos=[], n=Math.max(5,Math.round(hcm/5.5));
+    for(let i=0;i<n;i++){
+      const g=new THREE.BoxGeometry(wcm,1.1,4.6); g.rotateX(-0.5);
+      g.translate(0, hcm/2-2 - i*((hcm-6)/(n-1)), 0);
+      geos.push(g);
+    }
+    const head=new THREE.BoxGeometry(wcm+3,5,6.5); head.translate(0,hcm/2+3,0); geos.push(head);
+    const mesh=new THREE.Mesh(BGU.mergeGeometries(geos), new THREE.MeshStandardMaterial({ color, roughness:.6, side:THREE.DoubleSide }));
+    mesh.castShadow=true; geos.forEach(g=>g.dispose());
+    return mesh;
+  }
+  let dressGroup=null;
+  function buildWindowDressing(){
+    if(dressGroup){ scene.remove(dressGroup); dressGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
+    dressGroup=new THREE.Group();
+    WINDOW_LIST.forEach(win=>{
+      const cfg=decor.win[win.id]; if(!cfg||cfg.type==="none") return;
+      const G=openingGeom(win.id); if(!G) return;
+      const yaw = G.horiz? 0 : -Math.PI/2;
+      const mid={ x:G.A.x+G.U.x*G.wcm/2, z:G.A.z+G.U.z*G.wcm/2 };
+      const inward = isIndoor(mid.x+G.N.x*35, mid.z+G.N.z*35)? 1 : -1;   // 部屋側に吊るす
+      const top=G.sill+G.h+12;
+      const bottom=(G.sill>40)? Math.max(4,G.sill-18) : 3;
+      const hh=top-bottom, cy=(top+bottom)/2, W=G.wcm+22;
+      if(cfg.type==="blind"){
+        const b=blindMesh(G.wcm-2,G.h+6,cfg.color);
+        b.rotation.y=yaw;
+        b.position.set(mid.x+G.N.x*inward*(G.t/2+4), G.sill+(G.h+6)/2, mid.z+G.N.z*inward*(G.t/2+4));
+        dressGroup.add(b);
+        return;
+      }
+      // カーテンレール
+      const rail=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,W+10,10), M.alum);
+      rail.rotation.z=Math.PI/2; rail.rotation.y=yaw;
+      rail.position.set(mid.x+G.N.x*inward*(G.t/2+9), top+3, mid.z+G.N.z*inward*(G.t/2+9));
+      dressGroup.add(rail);
+      // レース（窓側・全幅）
+      const lace=fabricPanel(W-6,hh,"#f7f5ef",0.42,Math.max(5,Math.round(W/26)));
+      lace.rotation.y=yaw;
+      lace.position.set(mid.x+G.N.x*inward*(G.t/2+4), cy, mid.z+G.N.z*inward*(G.t/2+4));
+      dressGroup.add(lace);
+      if(cfg.type==="curtain"){
+        // 遮光カーテンを左右に寄せて吊る
+        const pw=W*0.34;
+        [-1,1].forEach(s=>{
+          const p=fabricPanel(pw,hh,cfg.color,1,4);
+          p.rotation.y=yaw;
+          const along=(W/2-pw/2)*s;
+          p.position.set(mid.x+G.U.x*along+G.N.x*inward*(G.t/2+10), cy, mid.z+G.U.z*along+G.N.z*inward*(G.t/2+10));
+          dressGroup.add(p);
+        });
+      }
+    });
+    scene.add(dressGroup);
   }
 
   // --- 造作（キッチン・トイレ・洗面台・浴槽・エアコン） ---
@@ -2130,13 +2510,150 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     bx(g,fMat(f.color,.72),arm,42,d,w/2-arm/2,25,0);
     const n=w>170?3:2, cw=(w-arm*2-6)/n;
     for(let i=0;i<n;i++) bx(g,fMat(f.color,1.06,.95),cw-4,10,d-22,-w/2+arm+3+cw*i+cw/2,31,4);
+    // 背もたれのクッション：左に2つ・右に1つ。色は個別に指定できる
+    const cs=cushionColors(f);
+    const inner=w/2-arm-3, cz=-d/2+17, cy=49;
+    const size=Math.max(24, Math.min(40, inner*0.6));
+    [ {x:-inner+size*0.58, c:cs[0], r: 0.09},
+      {x:-inner+size*1.75, c:cs[1], r:-0.05},
+      {x: inner-size*0.6,  c:cs[2], r:-0.09} ].forEach(sp=>{
+      const m=bx(g, fMat(sp.c||f.color, sp.c?1:1.12, .95), size, size, 11, sp.x, cy, cz);
+      m.rotation.x=-0.24; m.rotation.z=sp.r;
+    });
     legs4(g,w,d,8,6,legMat);
+  }
+  // ===== 追加の家具 =====
+  function buildDresser(f,g,H){
+    const w=f.w,d=f.d,h=Math.max(40,H||75);
+    const body=fMat(f.color,.98,.6), drw=fMat(f.color,.88,.55), fr=fMat(f.color,.92,.6);
+    bx(g,body,w,h-4,d,0,(h-4)/2,0);
+    bx(g,fMat(f.color,1.05,.45),w+3,4,d+3,0,h-2,0);                  // 天板
+    for(let i=0;i<3;i++){                                             // 引き出し3段
+      const y=h*0.17+i*(h*0.245);
+      bx(g,drw,w*0.88,h*0.2,1.6,0,y,d/2+0.7);
+      const hd=cyl(g,M.alum,1.1,1.1,w*0.26,0,y,d/2+2.2,10); hd.rotation.z=Math.PI/2;
+    }
+    // 三面鏡
+    // 鏡（環境マップがないので、明るい青白＋低い粗さで“鏡らしさ”を出す）
+    const mmat=new THREE.MeshStandardMaterial({color:0xaec6d6,roughness:.08,metalness:.25});
+    const mh=h*0.8, mw=w*0.42;
+    bx(g,fr,mw+5,mh+5,2.6,0,h+mh/2,-d/2+4);
+    bx(g,mmat,mw,mh,1,0,h+mh/2,-d/2+5.5);
+    [-1,1].forEach(s=>{
+      const wing=new THREE.Group();
+      bx(wing,fr,mw*0.5+4,mh*0.78+4,2.6,0,0,0);
+      bx(wing,mmat,mw*0.5,mh*0.78,1,0,0,1.5);
+      wing.position.set(s*(mw/2+mw*0.24), h+mh*0.46, -d/2+4.5);
+      wing.rotation.y=-s*0.45; g.add(wing);
+    });
+    // 小物（コスメ）
+    [["#e79ab0",7,-0.30],["#d7c0e8",11,0.26],["#f2d49c",9,0.05]].forEach(p=>{
+      cyl(g,fMat(p[0],1,.45),2.2,2.2,p[1], w*p[2], h+p[1]/2, d*0.12, 10);
+    });
+  }
+  function buildOfficeChair(f,g){
+    const w=f.w*0.72, d=f.d*0.72;
+    const body=fMat(f.color,1,.65), dark=fMat(f.color,.55,.5);
+    const base=new THREE.MeshStandardMaterial({color:0x33373d,roughness:.45,metalness:.4});
+    for(let i=0;i<5;i++){                       // 5本脚＋キャスター
+      const a=i/5*Math.PI*2;
+      const leg=bx(g,base,d*0.6,3,4, Math.cos(a)*d*0.3, 6, Math.sin(a)*d*0.3); leg.rotation.y=-a;
+      cyl(g,base,2.4,2.4,4.5, Math.cos(a)*d*0.55, 3, Math.sin(a)*d*0.55, 8);
+    }
+    cyl(g,base,3.2,3.8,32,0,21,0,12);           // ガスシリンダー
+    bx(g,body,w,8,d,0,45,0);                    // 座面
+    const back=bx(g,body,w*0.92,46,6,0,68,-d/2+4); back.rotation.x=-0.13;
+    bx(g,dark,w*0.8,9,7,0,93,-d/2+1.5);         // ヘッドレスト
+    [-1,1].forEach(s=>{                          // 肘掛け
+      bx(g,dark,4,16,d*0.45,s*(w/2+1),54,0);
+      bx(g,dark,5.5,3,d*0.55,s*(w/2+1),63,0);
+    });
+  }
+  const _artCache=new Map();
+  function makeArtTexture(f){
+    const key=f.pic||ART_LIST[0].key;
+    if(key.startsWith("data:")){
+      const t=new THREE.TextureLoader().load(key);
+      t.colorSpace=THREE.SRGBColorSpace; t.__own=true; return t;
+    }
+    if(_artCache.has(key)) return _artCache.get(key);
+    const c=document.createElement("canvas"); c.width=512; c.height=512;
+    try{ drawArt(key,c.getContext("2d"),512,512); }catch(e){ console.error("絵の描画エラー:",e); }
+    const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace;
+    _artCache.set(key,t); return t;
+  }
+  function buildFrame(f,g,H){
+    const w=f.w, h=Math.max(10,H||45), t=Math.max(3,f.d||5);
+    const fr=fMat(f.color,1,.6), b=Math.max(2.5,Math.min(w,h)*0.075);
+    bx(g,fr,w,b,t,0,h-b/2,0); bx(g,fr,w,b,t,0,b/2,0);
+    bx(g,fr,b,h-b*2,t,-w/2+b/2,h/2,0); bx(g,fr,b,h-b*2,t,w/2-b/2,h/2,0);
+    bx(g,new THREE.MeshStandardMaterial({color:0xfbfaf7,roughness:.92}),w-b*2,h-b*2,t*0.4,0,h/2,-t*0.15);
+    const art=new THREE.Mesh(new THREE.PlaneGeometry(Math.max(2,w-b*2.6),Math.max(2,h-b*2.6)),
+      new THREE.MeshStandardMaterial({ map:makeArtTexture(f), roughness:.86 }));
+    art.position.set(0,h/2,t*0.22); g.add(art);
+  }
+  function buildPrinter(f,g,H){
+    const w=f.w,d=f.d,h=Math.max(10,H||25);
+    const body=fMat(f.color,1,.55), dark=fMat(f.color,.4,.5);
+    bx(g,body,w,h*0.74,d,0,h*0.37,0);
+    bx(g,dark,w*0.96,h*0.1,d*0.96,0,h*0.79,0);
+    bx(g,body,w*0.88,h*0.16,d*0.5,0,h*0.92,-d*0.22);                       // 給紙トレイ
+    bx(g,fMat("#1b1e22",1,.4),w*0.34,h*0.16,1.6,-w*0.24,h*0.52,d/2+0.9);   // 操作パネル
+    bx(g,fMat("#e6e9ee",1,.85),w*0.72,1.4,d*0.34,0,h*0.46,d*0.34);         // 排紙トレイ
+  }
+  function buildPrinter3D(f,g,H){   // Bambu Lab A1 mini 風のベッドスリンガー
+    const w=f.w,d=f.d,h=Math.max(20,H||40);
+    const dark=fMat(f.color,1,.5), light=fMat("#d9dde2",1,.5);
+    bx(g,dark,w,h*0.16,d,0,h*0.08,0);                                       // ベース
+    bx(g,fMat("#22262c",1,.6),w*0.78,1.8,d*0.78,0,h*0.2,d*0.02);            // ヒートベッド
+    bx(g,fMat("#3f9a5c",1,.55),w*0.7,0.9,d*0.7,0,h*0.222,d*0.02);
+    [-1,1].forEach(s=>bx(g,dark,w*0.1,h*0.84,d*0.18,s*(w/2-w*0.055),h*0.5,-d/2+d*0.1));  // 門型の柱
+    bx(g,dark,w*0.99,h*0.11,d*0.18,0,h*0.92,-d/2+d*0.1);                    // 上の梁
+    bx(g,light,w*0.86,3,4,0,h*0.6,-d/2+d*0.19);                             // X軸レール
+    bx(g,fMat("#2b3038",1,.45),w*0.22,h*0.22,8,w*0.06,h*0.58,-d/2+d*0.3);   // ツールヘッド
+    const sp=cyl(g,light,d*0.17,d*0.17,3.5,-w/2-2.5,h*0.74,-d*0.08,14); sp.rotation.z=Math.PI/2;  // スプール
+  }
+  function buildPCTower(f,g,H){
+    const w=f.w,d=f.d,h=Math.max(20,H||45);
+    bx(g,fMat(f.color,1,.5),w,h,d,0,h/2,0);
+    bx(g,new THREE.MeshStandardMaterial({color:0x9fd6ff,roughness:.08,metalness:.2,transparent:true,opacity:.3}),
+       1.2,h*0.86,d*0.86,-w/2-0.3,h/2,0);                                   // 側面ガラス
+    for(let i=0;i<3;i++){                                                    // 前面ファン
+      const fan=cyl(g,fMat("#2f6fa8",1,.4), w*0.36, w*0.36, 1.4, 0, h*0.2+i*h*0.28, d/2+0.8, 14);
+      fan.rotation.x=Math.PI/2;
+    }
+    bx(g,fMat(f.color,.62,.6),w*0.92,1.2,d*0.92,0,h+0.6,0);
+  }
+  // デュアルモニター＋モニターアーム（デスクの奥にクランプ）
+  function buildMonitorArm(g,w,d,h){
+    const steel=new THREE.MeshStandardMaterial({color:0x2e3238,roughness:.45,metalness:.5});
+    const black=new THREE.MeshStandardMaterial({color:0x17191d,roughness:.35});
+    const screen=new THREE.MeshStandardMaterial({color:0x0e1218,roughness:.12,metalness:.3,emissive:0x14304d,emissiveIntensity:.55});
+    const pz=-d/2+5;
+    bx(g,steel,10,6,11,0,h+3,pz);                    // クランプ
+    bx(g,steel,7,8,4,0,h-3,pz-6.5);
+    cyl(g,steel,2,2,54,0,h+30,pz,12);                // 支柱
+    const mw=Math.min(58,Math.max(38,w*0.44)), mh=mw*0.58;
+    [-1,1].forEach(s=>{
+      const ax=s*(mw*0.53);
+      bx(g,steel,mw*0.55,2.8,2.8, s*(mw*0.27), h+48, pz);              // 横アーム
+      cyl(g,steel,2.3,2.3,6, ax, h+48, pz,10);                          // 関節
+      bx(g,steel,3.2,12,3.2, ax, h+43, pz+2.5);
+      const mon=new THREE.Group();
+      bx(mon,black,mw,mh,2.4,0,0,0);
+      bx(mon,screen,mw-3.5,mh-3.5,0.6,0,0,1.6);
+      bx(mon,black,mw*0.22,2,3.5,0,-mh/2+1,0);
+      mon.position.set(ax, h+34+mh/2, pz+8);
+      mon.rotation.y=-s*0.22;                                            // 少し内向き
+      g.add(mon);
+    });
   }
   function buildDesk(f,g,H){
     const w=f.w,d=f.d,h=Math.max(20,H||72);
     bx(g,fMat(f.color,.95,.6),w,3.5,d,0,h,0);
     legs4(g,w,d,h-1.5,4,fMat(f.color,.6));
     bx(g,fMat(f.color,.75),w*0.3,12,d*0.7,w*0.3,h-8,0);          // 引き出し
+    buildMonitorArm(g,w,d,h);                                     // デュアルモニター
   }
   // 椅子（他の家具と同じく +z 側が正面＝座る人が向く向き）
   function buildChairModel(color){
@@ -2184,9 +2701,9 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   }
   function buildWasher(f,g,H){
     const w=f.w,d=f.d,h=Math.max(30,H||95);
-    bx(g,M.whiteBody,w,h-3,d,0,(h-3)/2,0);
+    bx(g,fMat(f.color,1,.5),w,h-3,d,0,(h-3)/2,0);
     cyl(g,new THREE.MeshStandardMaterial({color:0x39424c,roughness:.3}),Math.min(w,d)*0.32,Math.min(w,d)*0.32,2,0,h-2,2,22);
-    bx(g,M.steel,w-10,6,8,0,h-5,-d/2+5);
+    bx(g,fMat(f.color,.85,.6),w-10,6,8,0,h-5,-d/2+5);
   }
   // ===== 観葉植物（幹から枝を再帰的に伸ばして葉を付ける）=====
   // 同じ家具は毎回同じ形になるよう、idから決まる疑似乱数を使う
@@ -2303,6 +2820,12 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     if(useExtrude){ buildExtrude(f,g,H); }
     else switch(type){
       case "plant":  buildPlant(f,g,H); break;
+      case "frame":  buildFrame(f,g,H); break;
+      case "dresser":buildDresser(f,g,H); break;
+      case "officechair": buildOfficeChair(f,g); break;
+      case "printer":buildPrinter(f,g,H); break;
+      case "printer3d": buildPrinter3D(f,g,H); break;
+      case "pctower":buildPCTower(f,g,H); break;
       case "fridge": buildFridge(f,g,H); break;
       case "washer": buildWasher(f,g,H); break;
       case "tv":     buildTV(f,g,H); break;
@@ -2330,7 +2853,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       ch.rotation.y = dir==="front"? Math.PI : dir==="back"? 0 : dir==="left"? Math.PI/2 : -Math.PI/2;
       g.add(ch);
     }
-    g.position.set(f.xCm, floorLevelAt(f.xCm,f.yCm), f.yCm);
+    g.position.set(f.xCm, floorLevelAt(f.xCm,f.yCm)+(f.baseY||0), f.yCm);   // 置く高さ（棚・机の上）
     g.rotation.y = -(f.angle||0)*Math.PI/180;
     const st=sitSpecFor(f,type); if(st) g.userData.sit=st;   // 座れる家具の座り位置
     return g;
@@ -2340,6 +2863,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     if(type==="sofa")  return { lz:f.d*0.06, eye:112, name:f.name };
     if(type==="bed")   return { lz:f.d*0.22, eye:116, name:f.name };
     if(type==="chair") return { lz:0,        eye:118, name:f.name };
+    if(type==="officechair") return { lz:0,  eye:121, name:f.name };
     if(type==="stool") return { lz:0,        eye:117, name:f.name };
     return null;
   }
@@ -2347,11 +2871,16 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   // 位置・向きだけの変更は動かすだけにするので、2Dでドラッグ中も滑らかに追従する。
   const furnNodes=new Map();
   function furnSig(f){
-    return [f.name,f.w,f.d,f.color,f.shape,f.cornerR,f.semiDir,f.semiStraight,f.lcorner,f.lw,f.ld,f.hCm||0,f.chair?1:0,f.chairDir].join("|");
+    return [f.name,f.w,f.d,f.color,f.shape,f.cornerR,f.semiDir,f.semiStraight,f.lcorner,f.lw,f.ld,
+            f.hCm||0,f.chair?1:0,f.chairDir,(f.cushions||[]).join(","),f.pic||""].join("|");
   }
   function disposeNode(node){
     furnGroup.remove(node.group);
-    node.group.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
+    node.group.traverse(o=>{
+      if(o.geometry) o.geometry.dispose();
+      const mats=Array.isArray(o.material)?o.material:(o.material?[o.material]:[]);
+      mats.forEach(m=>{ if(m.map&&m.map.__own) m.map.dispose(); });   // 取り込んだ画像だけ解放
+    });
   }
   function rebuildFurniture(){
     const seen=new Set();
@@ -2366,7 +2895,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
         furnGroup.add(g);
         furnNodes.set(f.id,{group:g,sig});
       } else {
-        node.group.position.set(f.xCm, floorLevelAt(f.xCm,f.yCm), f.yCm);
+        node.group.position.set(f.xCm, floorLevelAt(f.xCm,f.yCm)+(f.baseY||0), f.yCm);
         node.group.rotation.y=-(f.angle||0)*Math.PI/180;
       }
     });
@@ -2745,9 +3274,16 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     renderer.render(scene,camera);
   }
 
+  // 内装（壁・ドアの色、窓のカーテン）の変更を反映する
+  on3DDecor=()=>{
+    applyDecorMaterials();
+    if(view3dShown()||dressGroup) buildWindowDressing();
+  };
+
   // --- 初期構築 ---（buildStructure の中で造作も作られる）
   buildStructure();
   buildOpeningTrims();
+  buildWindowDressing();
 
   const api={
     _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, get furnGroup(){return furnGroup;}, get lockState(){ return {wantLock,fallbackLook,everLocked,lockedNow,isLocked:controls.isLocked}; }, step(dt){ doorList.forEach(d=>d.update(dt)); }, frame(dt){ tick(dt); }, look(){ scene.updateMatrixWorld(true); updatePrompt(); return { door:promptDoor&&promptDoor.label, sit:promptSit&&promptSit.userData.sit.name, text:lastPrompt }; }, act(){ interact(); }, get sitting(){ return sitting; }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
@@ -2806,6 +3342,7 @@ function applyWorking(w){
   if(!w) return;
   scaleCmPerPx=FIXED_SCALE; document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2); updateScaleInfo();
   if(w.calibCm!=null) document.getElementById("calibCm").value=w.calibCm;
+  if(w.decor && JSON.stringify(normalizeDecor(w.decor))!==JSON.stringify(decor)){ decor=normalizeDecor(w.decor); initDecorUI(); if(on3DDecor) on3DDecor(); }
   const incoming=w.furns||[]; const inIds=new Set(incoming.map(f=>f.id));
   furns.filter(f=>!inIds.has(f.id)).forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); });
   const byId={}; furns.forEach(f=>byId[f.id]=f);
