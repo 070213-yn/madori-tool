@@ -274,6 +274,13 @@
         <button class="sub" id="pRotR">⟳ 右90°</button>
         <span class="badge" id="pAngle">0°</span>
       </div>
+      <div class="row"><label>形</label>
+        <select id="pShape" style="flex:1;">
+          <option value="rect">四角</option><option value="round">角丸</option>
+          <option value="oval">円・楕円</option><option value="semi">半円</option><option value="L">L字</option>
+        </select>
+      </div>
+      <div class="row" id="pCornerRow"><label>角の丸み</label><input type="number" id="pCorner" step="1" min="0"><span class="hint" style="margin:0;">cm</span></div>
       <div class="row" id="pBaseRow"><label>置く高さ</label><input type="number" id="pBase" step="5" min="0"><span class="hint" style="margin:0;">cm（棚・机の上に置くとき）</span></div>
       <div class="row"><label>色</label><input type="color" id="pColor"></div>
       <div class="row" id="pCushRow"><label>クッション</label>
@@ -490,6 +497,8 @@ const PRESETS = [
   { key:"shelf",  name:"棚/収納", w:80, d:40, color:"#d4b89a" },
   { key:"fridge", name:"冷蔵庫", w:60, d:65, color:"#cfe8ff" },
   { key:"washer", name:"洗濯機", w:60, d:60, color:"#cfe8ff" },
+  { key:"rug",    name:"ラグ・カーペット", w:200, d:140, color:"#d9cbb8", hCm:3 },
+  { key:"rug_round",name:"ラグ(円形)", w:150, d:150, color:"#d9cbb8", shape:"oval", hCm:3 },
   { key:"table_marble",name:"ローテーブル(大理石)", w:100, d:100, color:"#efeae0", hCm:36 },
   { key:"dresser",name:"ドレッサー", w:90, d:45, color:"#f0dde3", hCm:75 },
   { key:"chair_office",name:"オフィスチェア", w:62, d:62, color:"#454a52" },
@@ -507,6 +516,7 @@ const PRESETS = [
 function typeOf(f){
   const n=f.name||"";
   if(/観葉|植物|グリーン|鉢植|パキラ|ウンベラータ|モンステラ|サンスベリア|ガジュマル/.test(n)) return "plant";
+  if(/ラグ|カーペット|絨毯|じゅうたん/.test(n)) return "rug";
   if(/大理石|マーブル|marble/i.test(n)) return "marbletable";
   if(/額縁|絵|ポスター|アート|写真立/.test(n)) return "frame";
   if(/ドレッサー|化粧台|鏡台/.test(n)) return "dresser";
@@ -528,7 +538,7 @@ function typeOf(f){
   if(/壁|障害|柱/.test(n)) return "pillar";
   return "generic";
 }
-const typeH={ marbletable:36, plant:130, frame:45, dresser:75, officechair:110, printer:25, printer3d:40, pctower:45, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
+const typeH={ rug:3, marbletable:36, plant:130, frame:45, dresser:75, officechair:110, printer:25, printer3d:40, pctower:45, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
 // 高さを指定していないときの既定の高さ
 function defaultHeight(f,type){
   type=type||typeOf(f);
@@ -536,7 +546,7 @@ function defaultHeight(f,type){
   return typeH[type]||70;
 }
 // 高さを自由に設定できる種類（ベッド・ソファ・椅子は形が複雑なので対象外）
-const HEIGHT_ADJUSTABLE=new Set(["marbletable","plant","frame","dresser","printer","printer3d","pctower","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
+const HEIGHT_ADJUSTABLE=new Set(["rug","marbletable","plant","frame","dresser","printer","printer3d","pctower","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
 function canSetHeight(f){
   const t=typeOf(f);
   if(HEIGHT_ADJUSTABLE.has(t)) return true;
@@ -1063,6 +1073,11 @@ function fillPropPanel(f){
   if(canH) document.getElementById("pH").value=Math.round(heightOf(f));
   document.getElementById("pAngle").textContent=(f.angle||0)+"°";
   document.getElementById("pColor").value=rgbToHex(f.color);
+  // 形と角の丸み
+  const sh=f.shape||"rect";
+  document.getElementById("pShape").value=sh;
+  document.getElementById("pCornerRow").style.display=(sh==="round"||sh==="semi")?"flex":"none";
+  document.getElementById("pCorner").value=Math.round(f.cornerR||0);
   // 置く高さ（棚や机の上に載せる）
   document.getElementById("pBase").value=Math.round(f.baseY||0);
   // ソファのクッション色（左2つ・右1つ）
@@ -1127,6 +1142,11 @@ document.getElementById("pD").oninput=e=>applyEdit(f=>f.d=parseFloat(e.target.va
 document.getElementById("pH").oninput=e=>applyEdit(f=>f.hCm=Math.max(0,parseFloat(e.target.value)||0),false);
 document.getElementById("pColor").oninput=e=>applyEdit(f=>f.color=e.target.value,false);
 document.getElementById("pBase").oninput=e=>applyEdit(f=>f.baseY=Math.max(0,parseFloat(e.target.value)||0),false);
+document.getElementById("pShape").onchange=e=>{
+  applyEdit(f=>{ f.shape=e.target.value; if(!f.cornerR) f.cornerR=Math.round(Math.min(f.w,f.d)*0.15); },true);
+  fillPropPanel(ctxSelFurn());
+};
+document.getElementById("pCorner").oninput=e=>applyEdit(f=>f.cornerR=Math.max(0,parseFloat(e.target.value)||0),true);
 [0,1,2].forEach(i=>{
   document.getElementById("pCush"+i).oninput=e=>applyEdit(f=>{
     const cs=cushionColors(f); cs[i]=e.target.value;
@@ -1190,6 +1210,8 @@ const OVERLAP_PAD = 1.5; // cm
 function furnOverlapCorners(f){ return corners(f.xCm,f.yCm, Math.max(1,f.w-2*OVERLAP_PAD), Math.max(1,f.d-2*OVERLAP_PAD), f.angle); }
 // 椅子は重なり判定の対象外（机の下に入る前提）
 function isChairLike(f){ return /椅子|チェア|chair/i.test(f.name||""); }
+// 重なり・当たり判定から外す家具（椅子＝机の下、ラグ＝床に敷く、額縁＝壁掛け）
+function isOverlapExempt(f){ return isChairLike(f) || /ラグ|カーペット|絨毯|じゅうたん|額縁/.test(f.name||""); }
 function chairZoneCorners(f){
   const w=f.w,d=f.d,depth=f.chairDepth; let zw,zh,ox,oy;
   if(f.chairDir==="front"){ zw=w; zh=depth; ox=0; oy=d/2+depth/2; }
@@ -1203,14 +1225,14 @@ function chairZoneCorners(f){
 function refreshOverlap(){
   let cnt=0; const ov=new Set();
   for(let i=0;i<furns.length;i++) for(let j=i+1;j<furns.length;j++){
-    if(isChairLike(furns[i])||isChairLike(furns[j])) continue;   // 椅子は判定しない
+    if(isOverlapExempt(furns[i])||isOverlapExempt(furns[j])) continue;   // 椅子・ラグ・額縁は判定しない
     if(overlapSAT(furnOverlapCorners(furns[i]),furnOverlapCorners(furns[j]))){ ov.add(furns[i].id); ov.add(furns[j].id); cnt++; }
   }
   furns.forEach(f=>{ const el=document.getElementById("furn_"+f.id); const pth=el&&el.querySelector(".fshape path"); if(pth) pth.setAttribute("stroke", furnStrokeColor(f, ov.has(f.id))); });
   document.getElementById("overlapInfo").innerHTML=cnt?`<span class="warn">重なり: ${cnt}組</span>`:`<span class="ok">重なり: なし</span>`;
   furns.filter(f=>f.chair).forEach(f=>{
     const zone=chairZoneCorners(f); let blocked=false;
-    for(const o of furns){ if(o.id===f.id||isChairLike(o)) continue; if(overlapSAT(zone,furnOverlapCorners(o))){ blocked=true; break; } }
+    for(const o of furns){ if(o.id===f.id||isOverlapExempt(o)) continue; if(overlapSAT(zone,furnOverlapCorners(o))){ blocked=true; break; } }
     const cz=document.getElementById("cz_"+f.id);
     if(cz){ cz.style.background=blocked?"rgba(255,45,45,.30)":"rgba(60,220,90,.25)"; cz.style.borderColor=blocked?"#ff2d2d":"#3cdc5a"; }
     f._chairBlocked=blocked;
@@ -1380,13 +1402,13 @@ function drawCard(item){
   const sc=layout.scaleCmPerPx||0.70, fs=layout.furns||[];
   // 重なり判定
   const ov=new Set();
-  for(let i=0;i<fs.length;i++) for(let j=i+1;j<fs.length;j++){ if(isChairLike(fs[i])||isChairLike(fs[j])) continue; if(overlapSAT(furnOverlapCorners(fs[i]),furnOverlapCorners(fs[j]))){ ov.add(i); ov.add(j); } }
+  for(let i=0;i<fs.length;i++) for(let j=i+1;j<fs.length;j++){ if(isOverlapExempt(fs[i])||isOverlapExempt(fs[j])) continue; if(overlapSAT(furnOverlapCorners(fs[i]),furnOverlapCorners(fs[j]))){ ov.add(i); ov.add(j); } }
   // 椅子ゾーン
   let chairWarn=false;
   fs.forEach((f,idx)=>{
     if(!f.chair){ f._chairBlocked=false; return; }
     const zone=chairZoneCorners(f); let blocked=false;
-    for(let k=0;k<fs.length;k++){ if(k===idx||isChairLike(fs[k])) continue; if(overlapSAT(zone,furnOverlapCorners(fs[k]))){ blocked=true; break; } }
+    for(let k=0;k<fs.length;k++){ if(k===idx||isOverlapExempt(fs[k])) continue; if(overlapSAT(zone,furnOverlapCorners(fs[k]))){ blocked=true; break; } }
     f._chairBlocked=blocked; if(blocked) chairWarn=true;
     cmpDrawPoly(ctx,zone,sc,s, blocked?"rgba(255,45,45,.30)":"rgba(60,220,90,.25)", blocked?"#ff2d2d":"#3cdc5a");
   });
@@ -2674,6 +2696,58 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     });
     legs4(g,w,d,8,6,legMat);
   }
+  // ===== ラグ・カーペット（毛足を植えてモフモフに）=====
+  function buildRug(f,g,H){
+    const w=f.w, d=f.d;
+    const pile=Math.max(1, Math.min(9, H||3));            // 毛足の長さ
+    const col=new THREE.Color(f.color||"#d9cbb8");
+    // 形（四角・角丸・円・半円・L字）は共通の形状生成を使う
+    let shapes=[];
+    try{
+      const dstr=svgShapePath(f.shape||"rect", w, d, shapePxParams(f,1));
+      const paths=svgLoader.parse(`<svg xmlns="http://www.w3.org/2000/svg"><path d="${dstr}"/></svg>`).paths;
+      paths.forEach(p=>shapes.push(...SVGLoader.createShapes(p)));
+    }catch(e){ console.error("ラグの形エラー:",e); }
+    if(!shapes.length){ const s=new THREE.Shape(); s.moveTo(0,0); s.lineTo(w,0); s.lineTo(w,d); s.lineTo(0,d); s.closePath(); shapes=[s]; }
+    // 土台（毛足の間から見える下地）
+    const baseH=pile*0.45;
+    const baseGeo=new THREE.ExtrudeGeometry(shapes,{ depth:baseH, bevelEnabled:false });
+    baseGeo.rotateX(Math.PI/2); baseGeo.translate(-w/2, baseH, -d/2);
+    const base=new THREE.Mesh(baseGeo, new THREE.MeshStandardMaterial({ map:carpetTex, color:col, roughness:1 }));
+    base.receiveShadow=true; g.add(base);
+    // 輪郭の内側だけに毛足を植える
+    const outline=shapes[0].getPoints(80);
+    const inside=(x,y)=>{
+      let ins=false;
+      for(let i=0,j=outline.length-1;i<outline.length;j=i++){
+        const xi=outline[i].x, yi=outline[i].y, xj=outline[j].x, yj=outline[j].y;
+        if(((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi)) ins=!ins;
+      }
+      return ins;
+    };
+    const rnd=makeRand(((f.id||1)*104729+Math.round(w*7+d*3))|0);
+    const target=Math.min(2600, Math.max(220, Math.round(w*d/13)));
+    const spacing=Math.sqrt((w*d)/target);
+    const tuftR=Math.max(pile*0.5, spacing*0.56);   // 隣とわずかに重なる太さにして隙間をなくす
+    const gA=[], gB=[];
+    let tries=0;
+    while(gA.length+gB.length<target && tries<target*4){
+      tries++;
+      const x=rnd()*w, y=rnd()*d;
+      if(!inside(x,y)) continue;
+      const hh=pile*(0.7+rnd()*0.7);
+      const gg=new THREE.ConeGeometry(tuftR,hh,3,1);
+      gg.rotateZ((rnd()-0.5)*0.75); gg.rotateX((rnd()-0.5)*0.75);
+      gg.translate(x-w/2, baseH+hh*0.4, y-d/2);
+      (rnd()<0.5? gA:gB).push(gg);
+    }
+    [[gA,col.clone()],[gB,col.clone().multiplyScalar(0.86)]].forEach(([list,c])=>{
+      if(!list.length) return;
+      const m=new THREE.Mesh(BGU.mergeGeometries(list), new THREE.MeshStandardMaterial({ color:c, roughness:1 }));
+      m.castShadow=true; g.add(m); list.forEach(x=>x.dispose());
+    });
+  }
+
   // ===== 追加の家具 =====
   // 大理石調のローテーブル：厚い天板＋一段内側の本体＋足元の光る台座
   function marbleMat(color,rough){
@@ -3027,9 +3101,10 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const g=new THREE.Group();
     const type=typeOf(f);
     const H=heightOf(f,type);   // ユーザーが指定した高さ（未指定なら種類ごとの既定値）
-    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && type!=="plant" && type!=="marbletable" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
+    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && type!=="plant" && type!=="marbletable" && type!=="rug" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
     if(useExtrude){ buildExtrude(f,g,H); }
     else switch(type){
+      case "rug":    buildRug(f,g,H); break;
       case "marbletable": buildMarbleTable(f,g,H); break;
       case "plant":  buildPlant(f,g,H); break;
       case "frame":  buildFrame(f,g,H); break;
@@ -3118,7 +3193,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     // 当たり判定
     furnSegs=[];
     furns.forEach(f=>{
-      if(isChairLike(f)) return;
+      if(isOverlapExempt(f)) return;   // ラグや額縁はぶつからない
       const cs=corners(f.xCm,f.yCm,f.w,f.d,f.angle||0);
       for(let i=0;i<4;i++){ const a=cs[i],b=cs[(i+1)%4]; furnSegs.push({x1:a.x,z1:a.y,x2:b.x,z2:b.y,half:0}); }
     });
