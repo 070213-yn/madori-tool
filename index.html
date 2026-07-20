@@ -53,7 +53,19 @@
   .section:nth-of-type(5){animation-delay:.22s}.section:nth-of-type(6){animation-delay:.27s}
   @keyframes secIn{ from{opacity:0; transform:translateY(10px)} to{opacity:1; transform:none} }
   .section h2 { font-size: 13px; font-weight:700; color: var(--accent-deep); margin-bottom: 9px; padding-bottom: 7px;
-    border-bottom: 1px solid var(--glass-line); display:flex; align-items:center; gap:7px; }
+    border-bottom: 1px solid var(--glass-line); display:flex; align-items:center; gap:7px; cursor:pointer; user-select:none; }
+  .section h2:hover { color:#3d7ac4; }
+  /* 見出しクリックで折りたたみ（アコーディオン） */
+  .section h2::after { content:"⌄"; margin-left:auto; font-size:15px; line-height:1; color:var(--ink-faint); transition:transform .2s ease; }
+  .section.collapsed h2::after { transform:rotate(-90deg); }
+  .section.collapsed h2 { margin-bottom:0; padding-bottom:0; border-bottom:none; }
+  .section.collapsed > *:not(h2) { display:none !important; }
+  .section.collapsed { padding-top:11px; padding-bottom:11px; }
+  #slotList { max-height: 320px; overflow-y: auto; }
+  #slotList::-webkit-scrollbar { width:8px; }
+  #slotList::-webkit-scrollbar-thumb { background:rgba(120,165,225,.35); border-radius:var(--pill); }
+  #panelTools { display:flex; gap:6px; margin:0 2px 10px; }
+  #panelTools button { flex:1; padding:6px 8px; font-size:11px; }
   .section h2::before{ content:""; width:9px; height:9px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent-soft)); box-shadow:0 0 0 3px rgba(111,168,255,.18); }
   .row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; flex-wrap: wrap; }
   .row label { font-size: 12px; color: var(--ink-soft); min-width: 60px; }
@@ -178,7 +190,14 @@
   #view3d.split #v3dTopbar button { padding: 5px 9px; }
   #view3d.split #v3dHelp { font-size: 10px; padding: 5px 11px; bottom: 10px; white-space: normal; text-align: center; line-height: 1.55; max-width: calc(100% - 24px); }
   #view3d.split #v3dPrompt { font-size: 11px; padding: 6px 12px; }
-  #view3dCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  /* 2画面のときは画面を暗くせず、小さな案内だけ下に出す（3Dの変化がすぐ見えるように） */
+  #view3d.split #v3dResume { background: transparent; align-items: flex-end; padding-bottom: 52px; }
+  #view3d.split #v3dResume .msg { font-size: 12px; padding: 9px 15px; line-height: 1.5; }
+  #view3d.split #v3dResume .msg small { font-size: 10px; }
+  #view3dCanvas { position: absolute; left: 0; top: 0; display: block; }
+  #v3dTopbar select { background: rgba(255,255,255,.14); color: #eaf3ff; border: 1px solid rgba(255,255,255,.25);
+    border-radius: var(--rad-sm); padding: 4px 7px; font-size: 11px; width: auto; cursor: pointer; }
+  #v3dTopbar select option { background: #1b2c45; color: #eaf3ff; }
   #v3dTopbar { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     padding: 8px 12px; border-radius: var(--pill); background: rgba(20,34,54,.55); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     border: 1px solid rgba(255,255,255,.18); color: #eaf3ff; font-size: 12px; }
@@ -215,6 +234,10 @@
 <div id="app">
   <div id="panel">
     <h1>間取り家具レイアウト</h1>
+    <div id="panelTools">
+      <button id="btnCollapseAll" class="sub">すべてたたむ</button>
+      <button id="btnExpandAll" class="sub">すべて開く</button>
+    </div>
 
     <div class="section">
       <h2>① 実寸（大きさ）合わせ</h2>
@@ -339,6 +362,18 @@
         <label>天井の高さ <input type="range" id="v3dCeil" min="220" max="300" step="5" value="240"><span class="v3dVal" id="v3dCeilVal">240cm</span></label>
         <label>目線の高さ <input type="range" id="v3dEye" min="100" max="185" step="5" value="150"><span class="v3dVal" id="v3dEyeVal">150cm</span></label>
         <label title="大きくすると広角になり、部屋全体が見渡せます">視野角 <input type="range" id="v3dFov" min="45" max="105" step="5" value="70"><span class="v3dVal" id="v3dFovVal">70°</span></label>
+        <label title="3D画面の縦横比。写真や動画に合わせたいときに">画面比
+          <select id="v3dAspect">
+            <option value="free">自由（いっぱい）</option>
+            <option value="1.7778">16:9</option>
+            <option value="1.6">16:10</option>
+            <option value="1.5">3:2</option>
+            <option value="1.3333">4:3</option>
+            <option value="1">1:1</option>
+            <option value="0.75">3:4（縦）</option>
+            <option value="0.5625">9:16（縦）</option>
+          </select>
+        </label>
       </div>
       <div id="v3dHelp">WASD: 移動｜矢印キー・マウス: 見回す｜E/クリック: ドアの開閉・座る｜Shift: 走る｜M: 上空から見る｜Esc: カーソルを出す</div>
       <div id="v3dPrompt"></div>
@@ -1292,6 +1327,35 @@ document.getElementById("fmDelete").onclick=()=>{
   setCustom(getCustom().filter(x=>x.key!==fmEditingKey)); refreshFurnTypeSelect(); renderCustomList(); closeFurnModal();
 };
 document.getElementById("furnModal").addEventListener("mousedown",(e)=>{ if(e.target.id==="furnModal") closeFurnModal(); });
+
+// ===== 左パネルの折りたたみ（アコーディオン）=====
+const COLLAPSE_KEY="madori_collapsed_v1";
+function getCollapsed(){ try{ return JSON.parse(localStorage.getItem(COLLAPSE_KEY))||{}; }catch(e){ return {}; } }
+function setSectionCollapsed(sec,on,save){
+  sec.classList.toggle("collapsed",on);
+  if(save!==false){
+    const st=getCollapsed(); st[sec.dataset.sec]=on?1:0;
+    localStorage.setItem(COLLAPSE_KEY,JSON.stringify(st));
+  }
+}
+function initAccordion(){
+  const st=getCollapsed();
+  document.querySelectorAll("#panel .section").forEach(sec=>{
+    const h2=sec.querySelector("h2"); if(!h2) return;
+    sec.dataset.sec=h2.textContent.trim();
+    if(st[sec.dataset.sec]) sec.classList.add("collapsed");
+    h2.addEventListener("click",()=>setSectionCollapsed(sec,!sec.classList.contains("collapsed")));
+  });
+  document.getElementById("btnCollapseAll").onclick=()=>document.querySelectorAll("#panel .section").forEach(s=>setSectionCollapsed(s,true));
+  document.getElementById("btnExpandAll").onclick=()=>document.querySelectorAll("#panel .section").forEach(s=>setSectionCollapsed(s,false));
+}
+initAccordion();
+// 家具を選ぶと「③ 選択中の家具」が畳まれていても自動で開く
+const _origFillProp=fillPropPanel;
+fillPropPanel=function(f){
+  _origFillProp(f);
+  if(f){ const box=document.getElementById("propBox"); if(box) box.classList.remove("collapsed"); }
+};
 
 // 何もないところ（家具以外）を左クリックで選択解除
 stageWrap.addEventListener("mousedown",(e)=>{
@@ -2343,7 +2407,15 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   let wantLock=false, everLocked=false, lockedNow=false, lockTimer=null;
   const HELP_LOCK="WASD: 移動｜矢印キー・マウス: 見回す｜E/クリック: ドアの開閉・座る｜Shift: 走る｜M: 上空から見る｜Esc: カーソルを出す";
   const HELP_DRAG="WASD: 移動｜矢印キー・ドラッグ: 見回す｜E/クリック: ドアの開閉・座る｜Shift: 走る｜M: 上空から見る";
-  const HELP_SPLIT="左の間取り図で動かすと3Dに即反映｜WASD: 移動｜矢印キー・ドラッグ: 見回す｜E: ドア・座る";
+  const HELP_SPLIT="左の間取り図で動かすと3Dに即反映｜3Dをクリックで操作開始・Escで2Dに戻る｜WASD: 移動｜E: ドア・座る";
+  // 「クリックで操作開始」の案内文を、通常／2画面で言い分ける
+  function updateResumeText(){
+    const msg=document.querySelector("#v3dResume .msg");
+    if(!msg) return;
+    msg.innerHTML = view3dSplit()
+      ? 'ここをクリックすると3Dを操作できます<small>マウスを動かすだけで見回せます。Escキーで左の2D編集に戻れます</small>'
+      : 'クリックするとマウスで見回せます<small>クリックしなくても、矢印キーで見回し・WASDキーで移動できます</small>';
+  }
   function tryLock(){
     if(fallbackLook||!view3dShown()||closing) return;
     wantLock=true; attemptLock(0);
@@ -2365,13 +2437,15 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   // ドラッグ視点（フォールバック）
   let dragging=false, dragDist=0, lastX=0, lastY=0, yaw=0, pitch=0;
   canvas.addEventListener("mousedown",e=>{
-    if(!view3dShown()||controls.isLocked||e.button!==0) return;
+    // ドラッグでの見回しは、カーソル固定が使えない環境のときだけ。
+    // それ以外は 2Dを操作中にマウスを動かしても3Dが動かないようにする。
+    if(!view3dShown()||controls.isLocked||!fallbackLook||e.button!==0) return;
     dragging=true; dragDist=0; lastX=e.clientX; lastY=e.clientY;
     const eu=new THREE.Euler().setFromQuaternion(camera.quaternion,"YXZ");
     yaw=eu.y; pitch=eu.x;
   });
   document.addEventListener("mousemove",e=>{
-    if(!dragging||controls.isLocked||topView) return;
+    if(!dragging||controls.isLocked||!fallbackLook||topView) return;
     const dx=e.clientX-lastX, dy=e.clientY-lastY;
     dragDist+=Math.abs(dx)+Math.abs(dy);
     lastX=e.clientX; lastY=e.clientY;
@@ -2531,9 +2605,9 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     if(!view3dShown()||!controls.isLocked||e.button!==0) return;
     interact();
   });
-  // 2画面モードではマウスカーソルを固定しない（左の2Dを操作できなくなるため）。
-  // 見回しはドラッグと矢印キーで行う。
-  canvas.addEventListener("click",()=>{ if(view3dShown()&&!view3dSplit()&&!controls.isLocked&&!fallbackLook) tryLock(); });
+  // 3D画面をクリックするとカーソルを固定して、マウスを動かすだけで見回せるようにする。
+  // （2画面モードでも同じ。Escを押すと左の2D編集に戻れる）
+  canvas.addEventListener("click",()=>{ if(view3dShown()&&!controls.isLocked&&!fallbackLook) tryLock(); });
   document.querySelector("#v3dResume .msg").addEventListener("click",tryLock);
   controls.addEventListener("lock",()=>{ lockedNow=true; everLocked=true; wantLock=true; clearTimeout(lockTimer); document.getElementById("v3dResume").style.display="none"; });
   controls.addEventListener("unlock",()=>{
@@ -2559,11 +2633,12 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     view.classList.toggle("split",on);
     document.getElementById("btn3DSplit").textContent = on? "□ 3Dだけ表示" : "⇔ 2画面";
     document.getElementById("btn3DSplit").classList.toggle("on",on);
+    updateResumeText();
     if(on){
       try{ controls.unlock(); }catch(e){}
       wantLock=false; clearTimeout(lockTimer);
-      document.getElementById("v3dResume").style.display="none";
       document.getElementById("v3dHelp").textContent=HELP_SPLIT;
+      document.getElementById("v3dResume").style.display=fallbackLook?"none":"flex";
       fit2DTo(stageWrap.clientWidth/2);      // 左半分に間取り図を収め直す
       rebuildFurniture();
     } else {
@@ -2593,14 +2668,30 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   };
   ["v3dCeil","v3dEye","v3dFov"].forEach(id=>relockAfterSlider(document.getElementById(id)));
 
-  // リサイズ
+  // リサイズ＆画面比（アスペクト比）。指定時は上下または左右に余白を付けて中央に置く
+  let aspectMode="free";
   function resize(){
-    const w=view.clientWidth, h=view.clientHeight;
-    if(!w||!h) return;
+    const aw=view.clientWidth, ah=view.clientHeight;
+    if(!aw||!ah) return;
+    let w=aw, h=ah;
+    if(aspectMode!=="free"){
+      const r=aspectMode;
+      if(aw/ah > r){ h=ah; w=Math.round(h*r); } else { w=aw; h=Math.round(w/r); }
+    }
+    canvas.style.width=w+"px"; canvas.style.height=h+"px";
+    canvas.style.left=Math.round((aw-w)/2)+"px";
+    canvas.style.top=Math.round((ah-h)/2)+"px";
     renderer.setSize(w,h,false);
     camera.aspect=w/h; camera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(view);
+  document.getElementById("v3dAspect").onchange=e=>{
+    const v=e.target.value;
+    aspectMode=(v==="free")?"free":parseFloat(v);
+    e.target.blur();
+    resize();
+    if(everLocked&&!controls.isLocked&&!fallbackLook) setTimeout(tryLock,80);
+  };
 
   // --- メインループ ---
   const clock=new THREE.Clock();
@@ -2669,7 +2760,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       renderer.setAnimationLoop(()=>tick());   // 引数を渡さない（時刻が dt として入るのを防ぐ）
       wantLock=false; clearTimeout(lockTimer);
       if(view3dSplit()) fit2DTo(stageWrap.clientWidth/2);
-      document.getElementById("v3dResume").style.display=(fallbackLook||view3dSplit())?"none":"flex";
+      updateResumeText();
+      document.getElementById("v3dResume").style.display=fallbackLook?"none":"flex";
     },
     close(){
       closing=true;
