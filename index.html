@@ -2284,16 +2284,26 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   const controls=new PointerLockControls(camera, canvas);
   const keys={};
   let topView=false, savedCam=null;
-  let fallbackLook=false;   // ポインターロックが使えない環境ではドラッグ視点に切り替える
+  let fallbackLook=false;   // ポインターロックが本当に使えない環境でのみドラッグ視点に切り替える
+  let wantLock=false, everLocked=false, lockedNow=false, lockTimer=null;
+  const HELP_DRAG="WASD: 移動｜矢印キー・ドラッグ: 見回す｜E/クリック: ドアの開閉・座る｜Shift: 走る｜M: 上空から見る";
   function tryLock(){
+    if(fallbackLook||!view3dShown()||closing) return;
+    wantLock=true; attemptLock(0);
+  }
+  // ブラウザはEscで解除した直後の約1.25秒間ロックを受け付けない。
+  // 1回失敗しただけでドラッグ操作に切り替えてしまわないよう、少し待って何度か試す。
+  function attemptLock(n){
+    clearTimeout(lockTimer);
+    if(!wantLock||fallbackLook||!view3dShown()||closing||controls.isLocked) return;
     try{ controls.lock(); }catch(e){}
-    setTimeout(()=>{
-      if(!controls.isLocked && view3dShown()){
-        fallbackLook=true;
-        document.getElementById("v3dResume").style.display="none";
-        document.getElementById("v3dHelp").textContent="ドラッグ: 見回す｜WASD/矢印: 移動｜E/クリック: ドア開閉｜Shift: 走る｜M: 上空から見る";
-      }
-    },400);
+    lockTimer=setTimeout(()=>{
+      if(controls.isLocked||!wantLock||fallbackLook||!view3dShown()||closing) return;
+      if(n<5){ attemptLock(n+1); return; }
+      fallbackLook=true;   // 何度試しても駄目な環境と判断
+      document.getElementById("v3dResume").style.display="none";
+      document.getElementById("v3dHelp").textContent=HELP_DRAG;
+    },450);
   }
   // ドラッグ視点（フォールバック）
   let dragging=false, dragDist=0, lastX=0, lastY=0, yaw=0, pitch=0;
@@ -2304,7 +2314,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     yaw=eu.y; pitch=eu.x;
   });
   document.addEventListener("mousemove",e=>{
-    if(!dragging||!fallbackLook||topView) return;
+    if(!dragging||controls.isLocked||topView) return;
     const dx=e.clientX-lastX, dy=e.clientY-lastY;
     dragDist+=Math.abs(dx)+Math.abs(dy);
     lastX=e.clientX; lastY=e.clientY;
@@ -2448,6 +2458,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   // --- 入力 ---
   function onKey(e,down){
     if(!view3dShown()) return;
+    const t=e.target;   // スライダーや入力欄を操作中はキーを奪わない
+    if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT")) return;
     const k=e.code;
     if(["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","ShiftLeft","ShiftRight","KeyE","KeyM","Space"].includes(k)) e.preventDefault();
     keys[k]=down;
@@ -2464,8 +2476,21 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   });
   canvas.addEventListener("click",()=>{ if(view3dShown()&&!controls.isLocked&&!fallbackLook) tryLock(); });
   document.querySelector("#v3dResume .msg").addEventListener("click",tryLock);
-  controls.addEventListener("lock",()=>{ document.getElementById("v3dResume").style.display="none"; });
-  controls.addEventListener("unlock",()=>{ if(view3dShown()&&!closing&&!fallbackLook) document.getElementById("v3dResume").style.display="flex"; });
+  controls.addEventListener("lock",()=>{ lockedNow=true; everLocked=true; wantLock=true; clearTimeout(lockTimer); document.getElementById("v3dResume").style.display="none"; });
+  controls.addEventListener("unlock",()=>{
+    // ロックに失敗したときにも unlock が飛んでくる。実際にロック中だった場合だけ
+    // 「ユーザーが自分で解除した」とみなして再試行を止める。
+    if(lockedNow){ wantLock=false; clearTimeout(lockTimer); }
+    lockedNow=false;
+    if(view3dShown()&&!closing&&!fallbackLook) document.getElementById("v3dResume").style.display="flex";
+  });
+  // スライダーを触るとポインターロックが外れるので、操作し終えたら自動でロックし直す
+  function relockAfterSlider(el){
+    const back=()=>{ el.blur(); if(everLocked&&!controls.isLocked&&!fallbackLook) setTimeout(tryLock,80); };
+    el.addEventListener("change",back);
+    el.addEventListener("mouseup",back);
+    el.addEventListener("touchend",back);
+  }
 
   let closing=false;
   document.getElementById("btn3DExit").onclick=()=>{ api.close(); };
@@ -2486,6 +2511,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     document.getElementById("v3dFovVal").textContent=fov+"°";
     camera.fov=fov; camera.updateProjectionMatrix();
   };
+  ["v3dCeil","v3dEye","v3dFov"].forEach(id=>relockAfterSlider(document.getElementById(id)));
 
   // リサイズ
   function resize(){
@@ -2553,7 +2579,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   buildOpeningTrims();
 
   const api={
-    _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, get furnGroup(){return furnGroup;}, step(dt){ doorList.forEach(d=>d.update(dt)); }, frame(dt){ tick(dt); }, look(){ scene.updateMatrixWorld(true); updatePrompt(); return { door:promptDoor&&promptDoor.label, sit:promptSit&&promptSit.userData.sit.name, text:lastPrompt }; }, act(){ interact(); }, get sitting(){ return sitting; }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
+    _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, get furnGroup(){return furnGroup;}, get lockState(){ return {wantLock,fallbackLook,everLocked,lockedNow,isLocked:controls.isLocked}; }, step(dt){ doorList.forEach(d=>d.update(dt)); }, frame(dt){ tick(dt); }, look(){ scene.updateMatrixWorld(true); updatePrompt(); return { door:promptDoor&&promptDoor.label, sit:promptSit&&promptSit.userData.sit.name, text:lastPrompt }; }, act(){ interact(); }, get sitting(){ return sitting; }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
     open(){
       closing=false;
       rebuildFurniture();
@@ -2561,10 +2587,12 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       camera.fov=parseInt(document.getElementById("v3dFov").value,10)||70;
       resize();
       renderer.setAnimationLoop(()=>tick());   // 引数を渡さない（時刻が dt として入るのを防ぐ）
+      wantLock=false; clearTimeout(lockTimer);
       document.getElementById("v3dResume").style.display=fallbackLook?"none":"flex";
     },
     close(){
       closing=true;
+      wantLock=false; clearTimeout(lockTimer);
       try{ controls.unlock(); }catch(e){}
       renderer.setAnimationLoop(null);
       document.getElementById("view3d").classList.remove("show");
