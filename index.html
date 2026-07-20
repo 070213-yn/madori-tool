@@ -1271,19 +1271,20 @@ const PLAN3D = {
   ],
   // ドア・窓（kind: hinged=開き戸 / double=両開き / slidewood=引き戸 / slideglass=引き違い窓 / window=はめ殺し窓）
   openings: [
-    { id:"ent",   kind:"hinged",     center:[158,167],  w:100, h:198, hinge:"max", swing:-1, label:"玄関ドア", style:"entrance" },
-    { id:"ldk",   kind:"hinged",     center:[390,226],  w:100, h:198, hinge:"max", swing:-1, label:"リビングのドア", style:"glass" },
-    { id:"toilet",kind:"hinged",     center:[332,282],  w:85,  h:198, hinge:"max", swing:+1, label:"トイレのドア" },
-    { id:"cl61",  kind:"double",     center:[98,400],   w:101, h:198, swing:+1,  label:"クローゼット(洋室6.1)" },
-    { id:"y61",   kind:"hinged",     center:[390,458],  w:103, h:198, hinge:"min", swing:-1, label:"洋室6.1のドア" },
-    { id:"wash",  kind:"hinged",     center:[792,516],  w:75,  h:198, hinge:"min", swing:-1, label:"洗面室のドア" },
+    { id:"ent",   kind:"hinged",     center:[158,167],  w:101, h:198, hinge:"min", swing:-1, label:"玄関ドア", style:"entrance" },
+    { id:"ldk",   kind:"hinged",     center:[390,225],  w:101, h:198, hinge:"min", swing:+1, label:"リビングのドア", style:"glass" },
+    { id:"toilet",kind:"hinged",     center:[331,282],  w:87,  h:198, hinge:"max", swing:-1, label:"トイレのドア" },
+    { id:"cl61",  kind:"double",     center:[98,400],   w:102, h:198, swing:+1,  label:"クローゼット(洋室6.1)" },
+    { id:"y61",   kind:"hinged",     center:[390,458],  w:101, h:198, hinge:"min", swing:-1, label:"洋室6.1のドア" },
+    { id:"wash",  kind:"hinged",     center:[800,516],  w:86,  h:198, hinge:"min", swing:-1, label:"洗面室のドア" },
     { id:"bath",  kind:"hinged",     center:[917,342],  w:89,  h:190, hinge:"max", swing:+1, label:"浴室のドア", style:"bath" },
-    { id:"cl46",  kind:"double",     center:[1004,516], w:145, h:198, swing:+1,  label:"クローゼット(洋室4.6)" },
-    { id:"ext46", kind:"hinged",     center:[1160,516], w:87,  h:198, hinge:"max", swing:-1, label:"洋室4.6の外ドア", style:"entrance" },
+    { id:"cl46",  kind:"double",     center:[1004,516], w:144, h:198, swing:+1,  label:"クローゼット(洋室4.6)" },
     { id:"slide", kind:"slidewood",  center:[855,747.5],w:229, h:196, label:"リビングと洋室4.6の引き戸" },
-    { id:"w61",   kind:"window",     center:[158,868],  w:220, h:110, sill:90, label:"洋室6.1の窓" },
-    { id:"wldk",  kind:"slideglass", center:[625,868],  w:220, h:197, sill:0,  label:"リビングの掃き出し窓" },
-    { id:"w46",   kind:"slideglass", center:[1148,868], w:103, h:197, sill:0,  label:"洋室4.6の掃き出し窓" },
+    // 洋室4.6の北にある小さめの開き窓（幅56cm。図面では外側に開く弧が描かれている）
+    { id:"w46n",  kind:"hinged",     center:[1165,516], w:70,  h:105, sill:85, hinge:"max", swing:-1, label:"洋室4.6の窓", style:"window" },
+    { id:"w61",   kind:"window",     center:[156,868],  w:218, h:110, sill:90, label:"洋室6.1の窓" },
+    { id:"wldk",  kind:"slideglass", center:[624,868],  w:219, h:197, sill:0,  label:"リビングの掃き出し窓" },
+    { id:"w46",   kind:"slideglass", center:[973,868],  w:218, h:197, sill:0,  label:"洋室4.6の掃き出し窓（ベランダへ）" },
   ],
   // 部屋の床（rect=[x0,y0,x1,y1]px / level=床の高さcm / mat=床材）
   rooms: [
@@ -1303,8 +1304,9 @@ const PLAN3D = {
   ],
   // 床から天井までの塊（メーターボックス・パイプスペース）
   solids: [
-    { rect:[47,196,105,275],  label:"MB" },
-    { rect:[749,174,800,231], label:"PS" },
+    { rect:[47,196,105,275],   label:"MB" },
+    { rect:[749,174,800,231],  label:"PS" },
+    { rect:[1096,831,1207,875],label:"洋室4.6 南東のパイプスペース（図面で壁が厚い部分）" },
   ],
   // 手すり壁（バルコニー・共用廊下。高さ110cm）
   parapets: [
@@ -1697,6 +1699,15 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   }
   // 木製ドアの1枚（横w×縦h、厚み4）origin=ヒンジ側の端・床
   function makeLeaf(w,h,style){
+    if(style==="window"){   // 開き窓（アルミ枠＋透明ガラス）
+      const g=new THREE.Group();
+      [[w/2,h-2.5,w,5],[w/2,2.5,w,5]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(p[2],p[3],4),M.alum); m.position.set(p[0],p[1],0); m.castShadow=true; m.userData.isDoor=true; g.add(m); });
+      [[2.5,h/2],[w-2.5,h/2]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(5,h,4),M.alum); m.position.set(p[0],p[1],0); m.userData.isDoor=true; g.add(m); });
+      const gl=new THREE.Mesh(new THREE.PlaneGeometry(w-8,h-8), M.glass);
+      gl.position.set(w/2,h/2,0); gl.userData.isDoor=true; g.add(gl);
+      const hd=new THREE.Mesh(new THREE.BoxGeometry(3,12,3),M.alum); hd.position.set(w-8,h/2,3); g.add(hd);
+      return g;
+    }
     const g=new THREE.Group();
     const mat = style==="entrance"? M.entDoor : style==="bath"? M.whiteBody : M.woodDoor;
     const panel=new THREE.Mesh(new THREE.BoxGeometry(w-1.5,h-2,4), mat);
@@ -1760,7 +1771,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
         const openDir={x:N.x*swing, z:N.z*swing};
         let d=Math.atan2(-openDir.z,openDir.x)-this.closedYaw;
         while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
-        this.openDelta=d*1.06;   // 約95度開く
+        this.openDelta=d*0.97;   // 約87度（開ききっても壁にめり込まない角度）
         this.pivot.rotation.y=this.closedYaw;
         const leaf=makeLeaf(w-3,h,this.op.style);
         leaf.position.x=1.5;
@@ -1775,7 +1786,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
           const openDir={x:N.x*swing,z:N.z*swing};
           let d=Math.atan2(-openDir.z,openDir.x)-yaw;
           while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
-          pv.userData={closedYaw:yaw, delta:d*1.02};
+          pv.userData={closedYaw:yaw, delta:d*0.97};
           pv.rotation.y=yaw;
           const leaf=makeLeaf(w/2-2,h,this.op.style);
           leaf.position.x=1;
@@ -1846,7 +1857,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
         const N = wi.horiz? {x:0,z:1} : {x:1,z:0};
         const A = wi.horiz? {x:wi.sx+o.s0, z:wi.az} : {x:wi.ax, z:wi.sz+o.s0};
         const wcm=o.s1-o.s0, h=o.h, sill=o.sill||0;
-        const isWin=(o.op.kind==="window"||o.op.kind==="slideglass");
+        const isWin=(o.op.kind==="window"||o.op.kind==="slideglass"||o.op.style==="window");
         const fm=isWin? M.alum : M.doorFrame;
         const ft=wi.t+3, fw=4;
         function bar(px,pz,py,len,vertical,along){
