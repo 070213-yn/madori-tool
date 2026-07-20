@@ -330,9 +330,9 @@
         <label>目線の高さ <input type="range" id="v3dEye" min="100" max="185" step="5" value="150"><span class="v3dVal" id="v3dEyeVal">150cm</span></label>
         <label title="大きくすると広角になり、部屋全体が見渡せます">視野角 <input type="range" id="v3dFov" min="45" max="105" step="5" value="70"><span class="v3dVal" id="v3dFovVal">70°</span></label>
       </div>
-      <div id="v3dHelp">クリックで操作開始｜WASD/矢印: 移動｜マウス: 見回す｜E/クリック: ドア開閉｜Shift: 走る｜M: 上空から見る｜Esc: カーソルを出す</div>
+      <div id="v3dHelp">WASD: 移動｜矢印キー・マウス: 見回す｜E/クリック: ドアの開閉・座る｜Shift: 走る｜M: 上空から見る｜Esc: カーソルを出す</div>
       <div id="v3dPrompt"></div>
-      <div id="v3dResume"><div class="msg">ここをクリックで歩行スタート<small>マウスで見回し、WASDキーで移動。Escでカーソルが戻ります</small></div></div>
+      <div id="v3dResume"><div class="msg">クリックするとマウスで見回せます<small>クリックしなくても、矢印キーで見回し・WASDキーで移動できます</small></div></div>
       <div id="v3dLoading"><div class="spin"></div><span>3Dモデルを生成中…（初回はライブラリの読み込みに数秒かかります）</span></div>
     </div>
   </div>
@@ -2001,11 +2001,13 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     legs4(g,w,d,70.5,4,fMat(f.color,.6));
     bx(g,fMat(f.color,.75),w*0.3,12,d*0.7,w*0.3,64,0);           // 引き出し
   }
+  // 椅子（他の家具と同じく +z 側が正面＝座る人が向く向き）
   function buildChairModel(color){
     const g=new THREE.Group();
     bx(g,fMat(color,.95),40,5,40,0,42,0);
-    const back=bx(g,fMat(color,.85),40,38,4,0,62,19); back.rotation.x=0.1;
+    const back=bx(g,fMat(color,.85),40,38,4,0,62,-19); back.rotation.x=-0.1;
     legs4(g,40,40,40,4,fMat(color,.55));
+    g.userData.sit={ lz:0, eye:118, name:"椅子" };
     return g;
   }
   function buildTable(f,g,topH){
@@ -2111,7 +2113,16 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     }
     g.position.set(f.xCm, floorLevelAt(f.xCm,f.yCm), f.yCm);
     g.rotation.y = -(f.angle||0)*Math.PI/180;
+    const st=sitSpecFor(f,type); if(st) g.userData.sit=st;   // 座れる家具の座り位置
     return g;
+  }
+  // 座れる家具の設定。lz は家具の中心から「正面(▼の向き)」方向へのずらし量、eye は床からの目線高さ
+  function sitSpecFor(f,type){
+    if(type==="sofa")  return { lz:f.d*0.06, eye:112, name:f.name };
+    if(type==="bed")   return { lz:f.d*0.22, eye:116, name:f.name };
+    if(type==="chair") return { lz:0,        eye:118, name:f.name };
+    if(type==="stool") return { lz:0,        eye:117, name:f.name };
+    return null;
   }
   function rebuildFurniture(){
     while(furnGroup.children.length){
@@ -2175,7 +2186,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   document.addEventListener("mouseup",()=>{ dragging=false; });
   canvas.addEventListener("click",e=>{
     if(!view3dShown()||controls.isLocked) return;
-    if(fallbackLook){ if(dragDist<6&&promptDoor) promptDoor.toggle(); }
+    if(fallbackLook&&dragDist<6) interact();
   });
   const BODY_R=20, WALK=250;
   const pos={x:C(157),z:C(225)};       // スタートは玄関
@@ -2184,6 +2195,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   camera.rotation.y=-Math.PI/2;         // 東（廊下の方）を向く
 
   function resetPlayer(){
+    sitting=null; standPos=null;
     pos.x=C(157); pos.z=C(225);
     camY=eyeH+floorLevelAt(pos.x,pos.z);
     camera.position.set(pos.x,camY,pos.z);
@@ -2214,21 +2226,71 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   // ドアの注視判定
   const raycaster=new THREE.Raycaster();
   const centerVec=new THREE.Vector2(0,0);
-  let promptDoor=null, lastPrompt="";
+  let promptDoor=null, promptSit=null, lastPrompt="";
+  let sitting=null, standPos=null;
   function updatePrompt(){
-    promptDoor=null;
-    if((!controls.isLocked&&!fallbackLook)||topView){ setPrompt(""); return; }
+    promptDoor=null; promptSit=null;
+    if(topView){ setPrompt(""); return; }
+    if(sitting){ setPrompt(`「${sitting.name}」に座り中 — 立ち上がる（E または WASD）`); return; }
+    camera.updateMatrixWorld();      // 移動直後でも正しい位置から視線判定する
     raycaster.setFromCamera(centerVec,camera);
     raycaster.far=190;
     const hits=raycaster.intersectObjects(rayTargets,true);
+    let doorDist=Infinity;
     for(const h of hits){
       let o=h.object;
       while(o&&!o.userData.door) o=o.parent;
-      if(o&&o.userData.door){ promptDoor=o.userData.door; break; }
-      if(h.object.userData.door){ promptDoor=h.object.userData.door; break; }
+      if(o&&o.userData.door){ promptDoor=o.userData.door; doorDist=h.distance; break; }
     }
-    if(promptDoor) setPrompt(`${promptDoor.label}を${promptDoor.isOpen?"閉める":"開ける"}（E または クリック）`);
+    // 座れる家具は「真下を向かなくても、近づいて向いていればOK」。ドアより近ければそちらを優先
+    const sit=findSitNear();
+    if(sit && sit.dist<doorDist){ promptSit=sit.obj; promptDoor=null; }
+    if(promptDoor)     setPrompt(`${promptDoor.label}を${promptDoor.isOpen?"閉める":"開ける"}（E または クリック）`);
+    else if(promptSit) setPrompt(`「${promptSit.userData.sit.name}」に座る（E または クリック）`);
     else setPrompt("");
+  }
+  // 目の前（110cm以内）にある座れる家具を探す
+  const _sitDir=new THREE.Vector3(), _sitPos=new THREE.Vector3();
+  function findSitNear(){
+    camera.getWorldDirection(_sitDir); _sitDir.y=0;
+    if(_sitDir.lengthSq()<1e-6) return null;
+    _sitDir.normalize();
+    let best=null, bestDist=1e9;
+    furnGroup.traverse(o=>{
+      if(!o.userData||!o.userData.sit) return;
+      o.getWorldPosition(_sitPos);
+      const dx=_sitPos.x-pos.x, dz=_sitPos.z-pos.z, dist=Math.hypot(dx,dz);
+      if(dist>110||dist<0.001) return;
+      const fwd=(dx*_sitDir.x+dz*_sitDir.z)/dist;
+      if(fwd<0.35) return;                 // だいたい正面にあるものだけ
+      if(dist<bestDist){ bestDist=dist; best=o; }
+    });
+    return best? { obj:best, dist:bestDist } : null;
+  }
+  // 家具に座る／立ち上がる
+  function sitOn(obj){
+    const st=obj.userData.sit;
+    const wp=new THREE.Vector3(); obj.getWorldPosition(wp);
+    const wq=new THREE.Quaternion(); obj.getWorldQuaternion(wq);
+    const yaw=new THREE.Euler().setFromQuaternion(wq,"YXZ").y;
+    const v=new THREE.Vector3(0,0,st.lz).applyAxisAngle(new THREE.Vector3(0,1,0), yaw).add(wp);
+    standPos={ x:pos.x, z:pos.z };
+    sitting={ x:v.x, z:v.z, y:wp.y+st.eye, name:st.name };
+    pos.x=v.x; pos.z=v.z;
+    // 家具の正面（2Dの▼の向き）を向いて座る
+    const e=new THREE.Euler().setFromQuaternion(camera.quaternion,"YXZ");
+    e.y=yaw+Math.PI; e.x=Math.max(-0.35,Math.min(0.2,e.x)); e.z=0;
+    camera.quaternion.setFromEuler(e);
+  }
+  function standUp(){
+    if(!sitting) return;
+    if(standPos){ pos.x=standPos.x; pos.z=standPos.z; }
+    sitting=null; standPos=null;
+  }
+  function interact(){
+    if(sitting){ standUp(); return; }
+    if(promptDoor){ promptDoor.toggle(); return; }
+    if(promptSit){ sitOn(promptSit); }
   }
   function setPrompt(t){
     if(t===lastPrompt) return; lastPrompt=t;
@@ -2260,14 +2322,16 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const k=e.code;
     if(["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","ShiftLeft","ShiftRight","KeyE","KeyM","Space"].includes(k)) e.preventDefault();
     keys[k]=down;
-    if(down&&k==="KeyE"&&promptDoor) promptDoor.toggle();
+    if(down) document.getElementById("v3dResume").style.display="none";  // キー操作を始めたら案内を消す
+    if(down&&k==="KeyE") interact();
     if(down&&k==="KeyM") toggleTopView();
+    if(down&&sitting&&["KeyW","KeyA","KeyS","KeyD"].includes(k)) standUp();   // 移動キーで立ち上がる
   }
   document.addEventListener("keydown",e=>onKey(e,true));
   document.addEventListener("keyup",e=>onKey(e,false));
   document.addEventListener("mousedown",e=>{
     if(!view3dShown()||!controls.isLocked||e.button!==0) return;
-    if(promptDoor) promptDoor.toggle();
+    interact();
   });
   canvas.addEventListener("click",()=>{ if(view3dShown()&&!controls.isLocked&&!fallbackLook) tryLock(); });
   document.querySelector("#v3dResume .msg").addEventListener("click",tryLock);
@@ -2305,31 +2369,49 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
 
   // --- メインループ ---
   const clock=new THREE.Clock();
-  function tick(){
-    const dt=Math.min(clock.getDelta(),0.05);
+  function tick(forceDt){
+    const dt=forceDt!=null? forceDt : Math.min(clock.getDelta(),0.05);
     doorList.forEach(d=>d.update(dt));
-    if((controls.isLocked||fallbackLook)&&!topView){
-      let fx=0,fz=0;
-      const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
-      dir.y=0; if(dir.lengthSq()>0.0001) dir.normalize();
-      const right={x:-dir.z,z:dir.x};
-      if(keys.KeyW||keys.ArrowUp){ fx+=dir.x; fz+=dir.z; }
-      if(keys.KeyS||keys.ArrowDown){ fx-=dir.x; fz-=dir.z; }
-      if(keys.KeyD||keys.ArrowRight){ fx+=right.x; fz+=right.z; }
-      if(keys.KeyA||keys.ArrowLeft){ fx-=right.x; fz-=right.z; }
-      const len=Math.hypot(fx,fz);
-      if(len>0.001){
-        const sp=WALK*((keys.ShiftLeft||keys.ShiftRight)?1.9:1);
-        const step=sp*dt;
-        const n=Math.max(1,Math.ceil(step/10));   // 大きな1歩は分割して壁抜けを防ぐ
-        for(let i=0;i<n;i++){
-          pos.x+=fx/len*step/n; pos.z+=fz/len*step/n;
-          resolveCollision(pos);
-        }
+    if(!topView){
+      // 矢印キーで視点操作（マウスのドラッグなしで見回せる）
+      let ry=0, rx=0;
+      if(keys.ArrowLeft) ry+=1;
+      if(keys.ArrowRight) ry-=1;
+      if(keys.ArrowUp) rx+=1;
+      if(keys.ArrowDown) rx-=1;
+      if(ry||rx){
+        const e=new THREE.Euler().setFromQuaternion(camera.quaternion,"YXZ");
+        e.y+=ry*1.8*dt;
+        e.x=Math.max(-1.45,Math.min(1.45,e.x+rx*1.3*dt));
+        e.z=0;
+        camera.quaternion.setFromEuler(e);
       }
-      const targetY=eyeH+floorLevelAt(pos.x,pos.z);
-      camY+=(targetY-camY)*Math.min(1,dt*10);
-      camera.position.set(pos.x,camY,pos.z);
+      if(sitting){
+        camY+=(sitting.y-camY)*Math.min(1,dt*12);   // すっと腰を下ろす
+        camera.position.set(sitting.x,camY,sitting.z);
+      } else {
+        let fx=0,fz=0;
+        const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
+        dir.y=0; if(dir.lengthSq()>0.0001) dir.normalize();
+        const right={x:-dir.z,z:dir.x};
+        if(keys.KeyW){ fx+=dir.x; fz+=dir.z; }
+        if(keys.KeyS){ fx-=dir.x; fz-=dir.z; }
+        if(keys.KeyD){ fx+=right.x; fz+=right.z; }
+        if(keys.KeyA){ fx-=right.x; fz-=right.z; }
+        const len=Math.hypot(fx,fz);
+        if(len>0.001){
+          const sp=WALK*((keys.ShiftLeft||keys.ShiftRight)?1.9:1);
+          const step=sp*dt;
+          const n=Math.max(1,Math.ceil(step/10));   // 大きな1歩は分割して壁抜けを防ぐ
+          for(let i=0;i<n;i++){
+            pos.x+=fx/len*step/n; pos.z+=fz/len*step/n;
+            resolveCollision(pos);
+          }
+        }
+        const targetY=eyeH+floorLevelAt(pos.x,pos.z);
+        camY+=(targetY-camY)*Math.min(1,dt*10);
+        camera.position.set(pos.x,camY,pos.z);
+      }
     }
     updatePrompt();
     renderer.render(scene,camera);
@@ -2340,7 +2422,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   buildOpeningTrims();
 
   const api={
-    _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, step(dt){ doorList.forEach(d=>d.update(dt)); }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
+    _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, step(dt){ doorList.forEach(d=>d.update(dt)); }, frame(dt){ tick(dt); }, look(){ scene.updateMatrixWorld(true); updatePrompt(); return { door:promptDoor&&promptDoor.label, sit:promptSit&&promptSit.userData.sit.name, text:lastPrompt }; }, act(){ interact(); }, get sitting(){ return sitting; }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
     open(){
       closing=false;
       rebuildFurniture();
