@@ -268,6 +268,7 @@
       <div class="row"><label>幅 W(cm)</label><input type="number" id="pW" step="1"></div>
       <div class="row"><label>奥行 D(cm)</label><input type="number" id="pD" step="1"></div>
       <div class="row" id="pHRow"><label>高さ H(cm)</label><input type="number" id="pH" step="5" min="5"><span class="hint" style="margin:0;">3Dでの高さ</span></div>
+      <div class="row"><label style="min-width:auto;"><input type="checkbox" id="pLockRatio"> 比率を保ったまま大きさを変える</label></div>
       <div class="row">
         <label>角度</label>
         <button class="sub" id="pRotL">⟲ 左90°</button>
@@ -1067,6 +1068,7 @@ function fillPropPanel(f){
   box.style.display="block";
   document.getElementById("pName").value=f.name;
   document.getElementById("pW").value=f.w; document.getElementById("pD").value=f.d;
+  _lockBase=null;   // 別の家具を選んだら比率の基準を取り直す
   // 高さ（3D用）。形が複雑なベッド・ソファ・椅子は非表示
   const canH=canSetHeight(f);
   document.getElementById("pHRow").style.display=canH?"flex":"none";
@@ -1137,9 +1139,50 @@ function applyEdit(mut, full){
   updateChairStatusUI();
 }
 document.getElementById("pName").oninput=e=>applyEdit(f=>f.name=e.target.value,false);
-document.getElementById("pW").oninput=e=>applyEdit(f=>f.w=parseFloat(e.target.value)||1,true);
-document.getElementById("pD").oninput=e=>applyEdit(f=>f.d=parseFloat(e.target.value)||1,true);
-document.getElementById("pH").oninput=e=>applyEdit(f=>f.hCm=Math.max(0,parseFloat(e.target.value)||0),false);
+// ===== 大きさの比率を保ったまま変更する =====
+const LOCK_KEY="madori_lockratio";
+let sizeLock=(localStorage.getItem(LOCK_KEY)==="1");
+let _lockBase=null;   // 変更を始めたときの 幅・奥行・高さ
+function captureLockBase(){
+  const f=ctxSelFurn();
+  _lockBase = f? { w:f.w||1, d:f.d||1, h:heightOf(f)||1 } : null;
+}
+["pW","pD","pH"].forEach(id=>{
+  const el=document.getElementById(id);
+  el.addEventListener("focus",captureLockBase);
+  el.addEventListener("mousedown",captureLockBase);
+});
+// which="w"|"d"|"h" の欄が v になったとき、他も同じ倍率で動かす
+function applySize(which,v){
+  applyEdit(f=>{
+    const b=_lockBase||{w:f.w||1,d:f.d||1,h:heightOf(f)||1};
+    if(!sizeLock){
+      if(which==="w") f.w=v; else if(which==="d") f.d=v; else f.hCm=v;
+      return;
+    }
+    const base=(which==="w")?b.w:(which==="d")?b.d:b.h;
+    const s=(base>0)? v/base : 1;
+    f.w=Math.max(1,Math.round(b.w*s));
+    f.d=Math.max(1,Math.round(b.d*s));
+    if(canSetHeight(f)) f.hCm=Math.max(1,Math.round(b.h*s));
+    if(which==="w") f.w=v; else if(which==="d") f.d=v; else if(canSetHeight(f)) f.hCm=v;   // 入力した欄は入力値そのまま
+  },true);
+  if(sizeLock){
+    const f=ctxSelFurn(); if(!f) return;
+    if(which!=="w") document.getElementById("pW").value=f.w;
+    if(which!=="d") document.getElementById("pD").value=f.d;
+    if(which!=="h" && canSetHeight(f)) document.getElementById("pH").value=Math.round(heightOf(f));
+  }
+}
+document.getElementById("pLockRatio").checked=sizeLock;
+document.getElementById("pLockRatio").onchange=e=>{
+  sizeLock=e.target.checked;
+  localStorage.setItem(LOCK_KEY, sizeLock?"1":"0");
+  captureLockBase();
+};
+document.getElementById("pW").oninput=e=>applySize("w",Math.max(1,parseFloat(e.target.value)||1));
+document.getElementById("pD").oninput=e=>applySize("d",Math.max(1,parseFloat(e.target.value)||1));
+document.getElementById("pH").oninput=e=>applySize("h",Math.max(1,parseFloat(e.target.value)||1));
 document.getElementById("pColor").oninput=e=>applyEdit(f=>f.color=e.target.value,false);
 document.getElementById("pBase").oninput=e=>applyEdit(f=>f.baseY=Math.max(0,parseFloat(e.target.value)||0),false);
 document.getElementById("pShape").onchange=e=>{
