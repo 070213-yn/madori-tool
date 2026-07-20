@@ -284,6 +284,12 @@
         <select id="pPic" style="flex:1;"></select>
       </div>
       <div class="row" id="pPicFileRow"><button id="pPicFile" class="sub full" style="margin:0;">画像ファイルを選ぶ</button><input type="file" id="pPicInput" accept="image/*" style="display:none;"></div>
+      <div class="row" id="pMonRow"><label>モニター</label>
+        <select id="pMonitors" style="flex:1;">
+          <option value="0">なし</option><option value="1">1台</option><option value="2">2台（デュアル）</option>
+        </select>
+      </div>
+      <div class="row" id="pKbRow"><label style="min-width:auto;"><input type="checkbox" id="pKbMouse"> キーボードとマウスを置く</label></div>
       <div style="border-top:1px solid #3a4150; margin:8px 0; padding-top:8px;">
         <div class="row"><label style="min-width:auto;"><input type="checkbox" id="pChair"> 椅子を引くスペースを判定</label></div>
         <div id="chairOpts">
@@ -955,6 +961,7 @@ function furnFromType(p, xCm, yCm){
     shape:p.shape||"rect", cornerR:p.cornerR||0, semiDir:p.semiDir||"bottom", semiStraight:p.semiStraight||0,
     lcorner:p.lcorner||"tr", lw:p.lw||0, ld:p.ld||0, hCm:p.hCm||0, baseY:p.baseY||0,
     cushions:(p.cushions?p.cushions.slice():null), pic:p.pic||"",
+    monitors:(p.monitors!=null?p.monitors:2), kbMouse:(p.kbMouse!==false),
     chair:!!p.chair, chairDir:"front", chairDepth:70 };
 }
 
@@ -1079,6 +1086,14 @@ function fillPropPanel(f){
       sel.value="__file";
     } else sel.value=f.pic||ART_LIST[0].key;
   }
+  // デスクのオプション（モニターの台数・キーボード＆マウス）
+  const isDesk=(typeOf(f)==="desk");
+  document.getElementById("pMonRow").style.display=isDesk?"flex":"none";
+  document.getElementById("pKbRow").style.display=isDesk?"flex":"none";
+  if(isDesk){
+    document.getElementById("pMonitors").value=String(f.monitors!=null?f.monitors:2);
+    document.getElementById("pKbMouse").checked=(f.kbMouse!==false);
+  }
   document.getElementById("pChair").checked=!!f.chair;
   document.getElementById("pChairDir").value=f.chairDir||"front";
   document.getElementById("pChairDepth").value=(f.chairDepth!=null?f.chairDepth:70);
@@ -1119,6 +1134,8 @@ document.getElementById("pBase").oninput=e=>applyEdit(f=>f.baseY=Math.max(0,pars
   },false);
 });
 document.getElementById("pPic").onchange=e=>{ if(e.target.value!=="__file") applyEdit(f=>f.pic=e.target.value,false); };
+document.getElementById("pMonitors").onchange=e=>applyEdit(f=>f.monitors=parseInt(e.target.value,10),false);
+document.getElementById("pKbMouse").onchange=e=>applyEdit(f=>f.kbMouse=e.target.checked,false);
 document.getElementById("pPicFile").onclick=()=>document.getElementById("pPicInput").click();
 document.getElementById("pPicInput").onchange=e=>{
   const file=e.target.files&&e.target.files[0]; if(!file) return;
@@ -2781,36 +2798,73 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     }
     bx(g,fMat(f.color,.62,.6),w*0.92,1.2,d*0.92,0,h+0.6,0);
   }
-  // デュアルモニター＋モニターアーム（デスクの奥にクランプ）
-  function buildMonitorArm(g,w,d,h){
-    const steel=new THREE.MeshStandardMaterial({color:0x2e3238,roughness:.45,metalness:.5});
-    const black=new THREE.MeshStandardMaterial({color:0x17191d,roughness:.35});
-    const screen=new THREE.MeshStandardMaterial({color:0x0e1218,roughness:.12,metalness:.3,emissive:0x14304d,emissiveIntensity:.55});
-    const pz=-d/2+5;
-    bx(g,steel,10,6,11,0,h+3,pz);                    // クランプ
-    bx(g,steel,7,8,4,0,h-3,pz-6.5);
-    cyl(g,steel,2,2,54,0,h+30,pz,12);                // 支柱
-    const mw=Math.min(58,Math.max(38,w*0.44)), mh=mw*0.58;
-    [-1,1].forEach(s=>{
-      const ax=s*(mw*0.53);
-      bx(g,steel,mw*0.55,2.8,2.8, s*(mw*0.27), h+48, pz);              // 横アーム
-      cyl(g,steel,2.3,2.3,6, ax, h+48, pz,10);                          // 関節
-      bx(g,steel,3.2,12,3.2, ax, h+43, pz+2.5);
+  // モニターアーム（デスクの奥にクランプ）。n=1でシングル、n=2でデュアル
+  const MON_M={
+    body:  new THREE.MeshStandardMaterial({ color:0xf4f4f2, roughness:.45 }),          // 白い筐体
+    arm:   new THREE.MeshStandardMaterial({ color:0xe9e9e6, roughness:.4, metalness:.25 }),
+    screen:new THREE.MeshStandardMaterial({ color:0xdfe8f0, roughness:.1, metalness:.15, emissive:0x9fb6c8, emissiveIntensity:.35 }),
+    key:   new THREE.MeshStandardMaterial({ color:0xe6e6e3, roughness:.7 }),
+  };
+  // キーボードのキー並び
+  const kbTex = makeTex(256,96,(g,W,H)=>{
+    g.fillStyle="#f4f4f2"; g.fillRect(0,0,W,H);
+    g.fillStyle="#dadad6";
+    const rows=5, pad=5, rh=(H-pad*2)/rows;
+    for(let r=0;r<rows;r++){
+      const y=pad+r*rh+1.5;
+      const n=(r===rows-1)?7:(r===0?14:13);
+      const kw=(W-pad*2)/n;
+      for(let i=0;i<n;i++) g.fillRect(pad+i*kw+1.2, y, kw-2.4, rh-3.2);
+    }
+  });
+  kbTex.repeat.set(1,1);
+  MON_M.keyTop=new THREE.MeshStandardMaterial({ map:kbTex, roughness:.7 });
+  function buildMonitorArm(g,w,d,h,n){
+    if(!n) return;
+    const A=MON_M.arm, pz=-d/2+5;
+    bx(g,A,10,6,11,0,h+3,pz);                        // クランプ
+    bx(g,A,7,8,4,0,h-3,pz-6.5);
+    cyl(g,A,2,2,54,0,h+30,pz,12);                    // 支柱
+    const mw=(n===1)? Math.min(66,Math.max(46,w*0.5)) : Math.min(58,Math.max(38,w*0.44));
+    const mh=mw*0.58;
+    const slots = (n===1)? [0] : [-1,1];
+    slots.forEach(s=>{
+      const ax=(n===1)? 0 : s*(mw*0.53);
+      if(n===2){
+        bx(g,A,mw*0.55,2.8,2.8, s*(mw*0.27), h+48, pz);                  // 横アーム
+        cyl(g,A,2.3,2.3,6, ax, h+48, pz,10);                             // 関節
+      } else {
+        bx(g,A,10,2.8,2.8, 0, h+48, pz+2);
+      }
+      bx(g,A,3.2,12,3.2, ax, h+43, pz+2.5);
       const mon=new THREE.Group();
-      bx(mon,black,mw,mh,2.4,0,0,0);
-      bx(mon,screen,mw-3.5,mh-3.5,0.6,0,0,1.6);
-      bx(mon,black,mw*0.22,2,3.5,0,-mh/2+1,0);
+      bx(mon,MON_M.body,mw,mh,2.4,0,0,0);                                // 背面・ベゼル（白）
+      bx(mon,MON_M.screen,mw-3.5,mh-3.5,0.6,0,0,1.6);                    // 画面
+      bx(mon,MON_M.body,mw*0.22,2,3.5,0,-mh/2+1,0);
       mon.position.set(ax, h+34+mh/2, pz+8);
-      mon.rotation.y=-s*0.22;                                            // 少し内向き
+      mon.rotation.y=(n===1)? 0 : -s*0.22;                                // デュアルは少し内向き
       g.add(mon);
     });
+  }
+  // キーボードとマウス（どちらも白）
+  function buildKeyboardMouse(g,w,d,h){
+    const kw=Math.min(44,Math.max(30,w*0.42)), kd=14;
+    const kx=-w*0.06, kz=d*0.20;
+    bx(g,MON_M.body,kw,1.6,kd,kx,h+2.6,kz);                              // 本体
+    bx(g,MON_M.keyTop,kw-4,0.9,kd-4,kx,h+3.7,kz);                        // キー面
+    const mouse=new THREE.Mesh(new THREE.SphereGeometry(1,10,8), MON_M.body);
+    mouse.scale.set(3.3,2.0,5.5);
+    mouse.position.set(kx+kw/2+11, h+2.0, kz);
+    mouse.castShadow=true; g.add(mouse);
+    bx(g,MON_M.key,0.8,0.7,3.2, kx+kw/2+11, h+4.4, kz-1.4);              // ホイール
   }
   function buildDesk(f,g,H){
     const w=f.w,d=f.d,h=Math.max(20,H||72);
     bx(g,fMat(f.color,.95,.6),w,3.5,d,0,h,0);
     legs4(g,w,d,h-1.5,4,fMat(f.color,.6));
     bx(g,fMat(f.color,.75),w*0.3,12,d*0.7,w*0.3,h-8,0);          // 引き出し
-    buildMonitorArm(g,w,d,h);                                     // デュアルモニター
+    buildMonitorArm(g,w,d,h,(f.monitors!=null? f.monitors : 2));  // モニター（0/1/2台）
+    if(f.kbMouse!==false) buildKeyboardMouse(g,w,d,h);            // キーボードとマウス
   }
   // 椅子（他の家具と同じく +z 側が正面＝座る人が向く向き）
   function buildChairModel(color){
@@ -3030,7 +3084,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   const furnNodes=new Map();
   function furnSig(f){
     return [f.name,f.w,f.d,f.color,f.shape,f.cornerR,f.semiDir,f.semiStraight,f.lcorner,f.lw,f.ld,
-            f.hCm||0,f.chair?1:0,f.chairDir,(f.cushions||[]).join(","),f.pic||""].join("|");
+            f.hCm||0,f.chair?1:0,f.chairDir,(f.cushions||[]).join(","),f.pic||"",
+            f.monitors!=null?f.monitors:2, f.kbMouse!==false?1:0].join("|");
   }
   function disposeNode(node){
     furnGroup.remove(node.group);
