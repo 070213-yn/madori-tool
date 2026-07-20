@@ -2369,8 +2369,10 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
 
   // --- メインループ ---
   const clock=new THREE.Clock();
+  // forceDt は動作確認用。通常は経過時間を自動計測する。
+  // ※ setAnimationLoop はコールバックに「時刻」を渡してくるので、必ず tick() の形で呼ぶこと
   function tick(forceDt){
-    const dt=forceDt!=null? forceDt : Math.min(clock.getDelta(),0.05);
+    const dt=Math.min((typeof forceDt==="number"&&forceDt>0)? forceDt : clock.getDelta(), 0.05);
     doorList.forEach(d=>d.update(dt));
     if(!topView){
       // 矢印キーで視点操作（マウスのドラッグなしで見回せる）
@@ -2402,7 +2404,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
         if(len>0.001){
           const sp=WALK*((keys.ShiftLeft||keys.ShiftRight)?1.9:1);
           const step=sp*dt;
-          const n=Math.max(1,Math.ceil(step/10));   // 大きな1歩は分割して壁抜けを防ぐ
+          const n=Math.min(24,Math.max(1,Math.ceil(step/10)));   // 大きな1歩は分割して壁抜けを防ぐ（上限つき）
           for(let i=0;i<n;i++){
             pos.x+=fx/len*step/n; pos.z+=fz/len*step/n;
             resolveCollision(pos);
@@ -2429,7 +2431,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       resetPlayer();
       camera.fov=parseInt(document.getElementById("v3dFov").value,10)||70;
       resize();
-      renderer.setAnimationLoop(tick);
+      renderer.setAnimationLoop(()=>tick());   // 引数を渡さない（時刻が dt として入るのを防ぐ）
       document.getElementById("v3dResume").style.display=fallbackLook?"none":"flex";
     },
     close(){
