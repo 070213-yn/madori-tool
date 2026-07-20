@@ -328,6 +328,7 @@
         <button id="btn3DExit">← 2Dに戻る</button>
         <label>天井の高さ <input type="range" id="v3dCeil" min="220" max="300" step="5" value="240"><span class="v3dVal" id="v3dCeilVal">240cm</span></label>
         <label>目線の高さ <input type="range" id="v3dEye" min="100" max="185" step="5" value="150"><span class="v3dVal" id="v3dEyeVal">150cm</span></label>
+        <label title="大きくすると広角になり、部屋全体が見渡せます">視野角 <input type="range" id="v3dFov" min="45" max="105" step="5" value="70"><span class="v3dVal" id="v3dFovVal">70°</span></label>
       </div>
       <div id="v3dHelp">クリックで操作開始｜WASD/矢印: 移動｜マウス: 見回す｜E/クリック: ドア開閉｜Shift: 走る｜M: 上空から見る｜Esc: カーソルを出す</div>
       <div id="v3dPrompt"></div>
@@ -1452,6 +1453,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     alum:      new THREE.MeshStandardMaterial({ color:0xd9dde0, roughness:.4, metalness:.4 }),
     glass:     new THREE.MeshStandardMaterial({ color:0xcfe6ff, roughness:.06, metalness:.25, transparent:true, opacity:.22, side:THREE.DoubleSide }),
     frosted:   new THREE.MeshStandardMaterial({ color:0xffffff, roughness:.6, transparent:true, opacity:.55, side:THREE.DoubleSide }),
+    shoji:     new THREE.MeshStandardMaterial({ color:0xf3eee2, roughness:.95 }),   // 引き戸の面材（透けない）
     whiteBody: new THREE.MeshStandardMaterial({ color:0xf6f6f4, roughness:.5 }),
     steel:     new THREE.MeshStandardMaterial({ color:0x9aa2a8, roughness:.35, metalness:.7 }),
     black:     new THREE.MeshStandardMaterial({ color:0x24262a, roughness:.5 }),
@@ -1731,15 +1733,23 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const hd2=doorHandle(); hd2.position.set(w-9,95,-3.5); g.add(hd2);
     return g;
   }
-  // 障子風の引き戸パネル（木枠＋すりガラス）
-  function makeShoji(w,h){
+  // 引き戸パネル（木枠＋不透明な面材）。handle=true で引手を付ける
+  function makeShoji(w,h,handle){
     const g=new THREE.Group();
     const fr=M.doorFrame;
     const t=3.4;
+    // 上下の框
     [[w/2,h-3,w,6],[w/2,3,w,6]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(p[2],p[3],t),fr); m.position.set(p[0],p[1],0); m.castShadow=true; m.userData.isDoor=true; g.add(m); });
+    // 左右の縦框
     [[3,h/2],[w-3,h/2]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(6,h,t),fr); m.position.set(p[0],p[1],0); m.castShadow=true; m.userData.isDoor=true; g.add(m); });
-    const gl=new THREE.Mesh(new THREE.BoxGeometry(w-10,h-10,1.2), M.frosted);
-    gl.position.set(w/2,h/2,0); gl.userData.isDoor=true; g.add(gl);
+    // 中桟（横に1本）
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(w-10,4,t*0.85),fr); rail.position.set(w/2,h*0.55,0); rail.userData.isDoor=true; g.add(rail);
+    // 面材（透けない）
+    const pn=new THREE.Mesh(new THREE.BoxGeometry(w-10,h-10,2.2), M.shoji);
+    pn.position.set(w/2,h/2,0); pn.castShadow=true; pn.userData.isDoor=true; g.add(pn);
+    if(handle){   // 引手（両面）
+      [1,-1].forEach(s=>{ const hd=new THREE.Mesh(new THREE.BoxGeometry(3,22,1.6),M.alum); hd.position.set(w-13,95,s*1.9); hd.userData.isDoor=true; g.add(hd); });
+    }
     return g;
   }
   // ガラス窓のパネル（アルミ枠＋透明ガラス）
@@ -1801,19 +1811,21 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
         });
       }
       else if(this.kind==="slidewood"){
-        // 引き違いの木戸2枚。開けると2枚とも北側（s0側）の壁に重なる
-        const pw=w/2+3;
-        this.panels=[];
-        [0,1].forEach(i=>{
-          const p=makeShoji(pw,h);
-          p.rotation.y = wi.horiz? 0 : -Math.PI/2;   // 縦向きの壁ではパネルも90度回す
-          const off=(i===0? -1:1)*3.2;   // 2本のレールに振り分け
-          p.position.set(A.x+U.x*(i*(w/2-3)) + N.x*off, sill, A.z+U.z*(i*(w/2-3)) + N.z*off);
-          p.userData={ closed:p.position.clone(), slide:new THREE.Vector3(-U.x*(w/2)*(i===0?1:2)*0.98, 0, -U.z*(w/2)*(i===0?1:2)*0.98).multiplyScalar(i===0?1:1) };
-          if(i===1) p.userData.slide.set(-U.x*(w-pw+3)*0.99, 0, -U.z*(w-pw+3)*0.99);
-          else p.userData.slide.set(-U.x*(pw-6), 0, -U.z*(pw-6));
-          this.panels.push(p); this.group.add(p);
-        });
+        // 片引き戸：s1側（リビングから見て右）の1枚だけがスライドし、s0側の1枚は固定
+        const pw=w/2+3, rail=3.4, startS=w-pw;
+        const yaw = wi.horiz? 0 : -Math.PI/2;
+        const pFix=makeShoji(pw,h,false);        // 固定側
+        pFix.rotation.y=yaw;
+        pFix.position.set(A.x - N.x*rail, sill, A.z - N.z*rail);
+        pFix.userData={ closed:pFix.position.clone(), slide:new THREE.Vector3(0,0,0) };
+        const pMov=makeShoji(pw,h,true);         // 可動側（引手つき）
+        pMov.rotation.y=yaw;
+        pMov.position.set(A.x + U.x*startS + N.x*rail, sill, A.z + U.z*startS + N.z*rail);
+        pMov.userData={ closed:pMov.position.clone(), slide:new THREE.Vector3(-U.x*(startS-2), 0, -U.z*(startS-2)) };
+        this.panels=[pFix,pMov];
+        this.group.add(pFix,pMov);
+        // 開けても固定側（s0側の半分）は塞がったまま
+        this.fixedSeg={ x1:A.x, z1:A.z, x2:A.x+U.x*pw, z2:A.z+U.z*pw, half:Math.max(3,wi.t/2) };
       }
       else if(this.kind==="slideglass"){
         // 引き違いのガラス窓2枚。開けると片方がもう片方に重なる
@@ -1848,8 +1860,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     }
     colSegs(){
       if(this.t<0.35) return [this.baseSeg];
-      if(this.kind==="slideglass") return [this.fixedSeg];
-      if(this.kind==="slidewood") return [];
+      if(this.fixedSeg) return [this.fixedSeg];   // 引き戸・引き違い窓は開けても片側は塞がったまま
       return [];
     }
   }
@@ -2277,6 +2288,11 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     eyeH=parseInt(e.target.value,10);
     document.getElementById("v3dEyeVal").textContent=eyeH+"cm";
   };
+  document.getElementById("v3dFov").oninput=e=>{
+    const fov=parseInt(e.target.value,10);
+    document.getElementById("v3dFovVal").textContent=fov+"°";
+    camera.fov=fov; camera.updateProjectionMatrix();
+  };
 
   // リサイズ
   function resize(){
@@ -2329,6 +2345,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       closing=false;
       rebuildFurniture();
       resetPlayer();
+      camera.fov=parseInt(document.getElementById("v3dFov").value,10)||70;
       resize();
       renderer.setAnimationLoop(tick);
       document.getElementById("v3dResume").style.display=fallbackLook?"none":"flex";
