@@ -99,6 +99,7 @@
   .furn { position: absolute; cursor: move; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 11px; color: #2c3550; font-weight: 700; user-select: none; transition: filter .2s; }
   .furn .fshape { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 4px 10px rgba(70,110,170,.26)); pointer-events: none; }
   .furn .fshape path { stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .furn .fshape path.dira { fill: rgba(35,55,95,.55); stroke: rgba(255,255,255,.9); stroke-width: 1; }
   .furn .lbl { position: relative; z-index: 1; padding: 2px; line-height: 1.1; pointer-events: none; text-shadow: 0 1px 3px rgba(255,255,255,.92); white-space: pre; }
   .furn.selected { z-index: 50; }
   .furn.selected .fshape { filter: drop-shadow(0 0 7px rgba(111,168,255,.95)) drop-shadow(0 6px 14px rgba(111,168,255,.55)); animation: selPulse 1.7s ease-in-out infinite; }
@@ -222,7 +223,7 @@
       <h2>② 家具を追加</h2>
       <div class="row"><select id="furnType"></select></div>
       <button id="btnAdd" class="full">＋ 配置する</button>
-      <div class="hint">追加した家具はドラッグで移動。同じ家具を何個でも追加できます。</div>
+      <div class="hint">追加した家具はドラッグで移動。同じ家具を何個でも追加できます。家具の▼マークが「正面の向き」です（回転すると一緒に回ります）。</div>
       <div style="border-top:1px solid var(--glass-line); margin:10px 0 6px; padding-top:8px;">
         <button id="btnNewFurn" class="full sub">＋ 家具の種類を作る</button>
         <div id="customList"></div>
@@ -689,7 +690,7 @@ function renderFurn(f){
   let el=document.getElementById("furn_"+f.id);
   if(!el){
     el=document.createElement("div"); el.className="furn"; el.id="furn_"+f.id;
-    el.innerHTML=`<svg class="fshape" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><path></path></svg><span class="lbl"></span>`; stage.appendChild(el);
+    el.innerHTML=`<svg class="fshape" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"><path></path><path class="dira"></path></svg><span class="lbl"></span>`; stage.appendChild(el);
     const cz=document.createElement("div"); cz.className="clearZone"; cz.id="cz_"+f.id; cz.style.display="none"; stage.appendChild(cz);
     makeDraggable(el,f);
   }
@@ -712,6 +713,13 @@ function layoutFurn(f){
   path.setAttribute("d", svgShapePath(f.shape||"rect", wpx, dpx, shapePxParams(f, pxPerCm())));
   path.setAttribute("fill", hexToRgba(f.color,0.82));
   path.setAttribute("stroke", furnStrokeColor(f,false));
+  // 正面（向き）を示す小さな矢印。角度0のとき下向き＝家具の手前側（3Dのソファの座る向き・TV画面と同じ）
+  const dira=svg.querySelector(".dira");
+  if(dira){
+    const s=Math.min(15, Math.max(7, Math.min(wpx,dpx)*0.18));
+    const acx=wpx/2, ay1=dpx-3, ay0=dpx-3-s;
+    dira.setAttribute("d", `M${(acx-s*0.75).toFixed(1)},${ay0.toFixed(1)} L${acx.toFixed(1)},${ay1.toFixed(1)} L${(acx+s*0.75).toFixed(1)},${ay0.toFixed(1)} Z`);
+  }
   const lbl=el.querySelector(".lbl");
   lbl.textContent=f.name;
   lbl.style.transform=`rotate(${-f.angle}deg)`; // 文字は常に水平に
@@ -1048,6 +1056,12 @@ function drawCard(item){
     ctx.strokeStyle = seld?"#ff7a1a":(ov.has(idx)?"#ff2d2d":"rgba(70,100,150,.6)");
     ctx.stroke(path);
     ctx.restore();
+    // 正面（向き）を示す小さな矢印（メイン編集画面と同じ）
+    { const as=Math.min(10, Math.max(4, Math.min(w,h)*0.18));
+      ctx.beginPath();
+      ctx.moveTo(-as*0.75, h/2-2-as); ctx.lineTo(0, h/2-2); ctx.lineTo(as*0.75, h/2-2-as); ctx.closePath();
+      ctx.fillStyle="rgba(35,55,95,.55)"; ctx.fill();
+      ctx.strokeStyle="rgba(255,255,255,.9)"; ctx.lineWidth=1; ctx.stroke(); }
     ctx.rotate(-(f.angle||0)*Math.PI/180); // 文字は常に水平に
     const m=labelMetrics(w,h,f.angle);
     const fp=fitFontPx(f.name, m.sw, m.sh, m.vertical);
