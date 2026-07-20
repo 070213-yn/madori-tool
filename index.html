@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>間取り家具レイアウトツール</title>
+<!-- 3Dプレビュー用 Three.js（importmap＝ライブラリの住所表。宣言だけなので普段は読み込まれず、3Dを開いた時だけダウンロードされる） -->
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
 <style>
   :root{
     --bg1:#eaf3ff; --bg2:#f7fbff; --bg3:#dceaff;
@@ -159,6 +166,36 @@
   .cmpCard .editTag { font-size: 11px; color: var(--accent-deep); font-weight: normal; }
   #cmpEmpty { color: var(--ink-faint); font-size: 13px; padding: 20px; }
 
+  /* 3Dウォークスルー */
+  #view3d { position: absolute; inset: 0; z-index: 600; display: none; background: #0d1a2b; border-radius: var(--rad); overflow: hidden; }
+  #view3d.show { display: block; animation: fadeIn .3s ease both; }
+  #view3dCanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #v3dTopbar { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 8px 12px; border-radius: var(--pill); background: rgba(20,34,54,.55); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255,255,255,.18); color: #eaf3ff; font-size: 12px; }
+  #v3dTopbar label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  #v3dTopbar input[type="range"] { width: 110px; }
+  #v3dTopbar .v3dVal { min-width: 44px; font-weight: 700; color: #bfe0ff; }
+  #btn3DExit { background: linear-gradient(135deg,#7fe0c0,#2bb98a); font-weight: 700; }
+  #v3dCross { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; z-index: 5; pointer-events: none; opacity: .85; }
+  #v3dCross::before, #v3dCross::after { content: ""; position: absolute; background: rgba(255,255,255,.9); box-shadow: 0 0 3px rgba(0,0,0,.6); }
+  #v3dCross::before { left: 8px; top: 2px; width: 2px; height: 14px; }
+  #v3dCross::after { left: 2px; top: 8px; width: 14px; height: 2px; }
+  #v3dHelp { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 10; padding: 7px 16px; border-radius: var(--pill);
+    background: rgba(20,34,54,.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: #cfe4ff; font-size: 12px; white-space: nowrap;
+    border: 1px solid rgba(255,255,255,.15); }
+  #v3dPrompt { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); z-index: 10; padding: 8px 18px; border-radius: var(--pill);
+    background: rgba(43,185,138,.85); color: #fff; font-size: 13px; font-weight: 700; display: none; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.35); }
+  #v3dResume { position: absolute; inset: 0; z-index: 8; display: none; align-items: center; justify-content: center; pointer-events: none;
+    background: rgba(10,20,35,.35); }
+  #v3dResume .msg { padding: 18px 34px; border-radius: 20px; background: rgba(20,34,54,.85); color: #fff; font-size: 15px; font-weight: 700;
+    border: 1px solid rgba(255,255,255,.25); box-shadow: 0 10px 30px rgba(0,0,0,.4); text-align: center; line-height: 1.7; cursor: pointer; pointer-events: auto; }
+  #v3dResume .msg small { display: block; font-size: 11px; font-weight: 500; color: #bfd6f5; }
+  #v3dLoading { position: absolute; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    background: linear-gradient(160deg,#12233c,#0d1a2b); color: #cfe4ff; font-size: 14px; font-weight: 600; }
+  #v3dLoading .spin { width: 42px; height: 42px; border-radius: 50%; border: 4px solid rgba(140,190,255,.25); border-top-color: #6fa8ff; animation: v3dspin 1s linear infinite; }
+  @keyframes v3dspin { to { transform: rotate(360deg); } }
+
   /* スクロールバー */
   #panel::-webkit-scrollbar, #stageWrap::-webkit-scrollbar, #compareGrid::-webkit-scrollbar{ width:10px; height:10px; }
   #panel::-webkit-scrollbar-thumb, #stageWrap::-webkit-scrollbar-thumb, #compareGrid::-webkit-scrollbar-thumb{ background:rgba(120,165,225,.35); border-radius:var(--pill); border:2px solid transparent; background-clip:padding-box; }
@@ -235,6 +272,12 @@
     </div>
 
     <div class="section">
+      <h2>3Dで歩いてみる</h2>
+      <button id="btn3D" class="full">🏠 3Dプレビュー（中を歩く）</button>
+      <div class="hint">今の家具配置をそのまま3Dの部屋にして、一人称視点で中を歩き回れます。ドアの開け閉め・天井の高さ変更もできます（PC推奨）。</div>
+    </div>
+
+    <div class="section">
       <h2>⑤ 全体</h2>
       <div class="row"><label style="min-width:auto;"><input type="checkbox" id="gridOn"> グリッド(50cm)</label></div>
       <div class="row"><label style="min-width:auto;"><input type="checkbox" id="bgNoText"> 帖の文字を隠す（文字なし背景）</label></div>
@@ -275,6 +318,20 @@
         <span style="font-size:11px;color:#8a98a8;">カードをクリックで編集対象を選択 → 左サイドバーで追加・回転・サイズ変更</span>
       </div>
       <div id="compareGrid"></div>
+    </div>
+
+    <div id="view3d">
+      <canvas id="view3dCanvas"></canvas>
+      <div id="v3dCross"></div>
+      <div id="v3dTopbar">
+        <button id="btn3DExit">← 2Dに戻る</button>
+        <label>天井の高さ <input type="range" id="v3dCeil" min="220" max="300" step="5" value="240"><span class="v3dVal" id="v3dCeilVal">240cm</span></label>
+        <label>目線の高さ <input type="range" id="v3dEye" min="100" max="185" step="5" value="150"><span class="v3dVal" id="v3dEyeVal">150cm</span></label>
+      </div>
+      <div id="v3dHelp">クリックで操作開始｜WASD/矢印: 移動｜マウス: 見回す｜E/クリック: ドア開閉｜Shift: 走る｜M: 上空から見る｜Esc: カーソルを出す</div>
+      <div id="v3dPrompt"></div>
+      <div id="v3dResume"><div class="msg">ここをクリックで歩行スタート<small>マウスで見回し、WASDキーで移動。Escでカーソルが戻ります</small></div></div>
+      <div id="v3dLoading"><div class="spin"></div><span>3Dモデルを生成中…（初回はライブラリの読み込みに数秒かかります）</span></div>
     </div>
   </div>
 </div>
@@ -335,6 +392,8 @@ const FIREBASE_CONFIG = {
 };
 
 const LS_KEY = "madori_layout_v3";
+// 背景画像（帖の文字あり／なし）。画像読み込み完了時に参照するため先に宣言しておく
+const BG_TEXT="floorplan.png", BG_NOTEXT="floorplan_notext.png";
 
 const PRESETS = [
   { key:"bed_s",  name:"ベッド(シングル)", w:100, d:200, color:"#b3d4ff" },
@@ -515,10 +574,10 @@ floorImg.onload=()=>{
   booted=true; applyBgMode();
  }catch(err){ console.error("起動処理でエラー:", err); }
 };
-if(floorImg.complete && floorImg.naturalWidth) floorImg.onload();
+// 画像がキャッシュ済みで既に読み込み完了している場合。スクリプト全体の定義が終わってから起動する（定義前アクセスのエラー防止）
+if(floorImg.complete && floorImg.naturalWidth) setTimeout(floorImg.onload, 0);
 
 // 背景画像（帖の文字あり／なし）の切替
-const BG_TEXT="floorplan.png", BG_NOTEXT="floorplan_notext.png";
 function applyBgMode(){
   const noText=localStorage.getItem("madori_bgmode")==="notext";
   const cb=document.getElementById("bgNoText"); if(cb) cb.checked=noText;
@@ -548,6 +607,7 @@ document.getElementById("zoomOut").onclick=()=>zoomCenter(1/1.15);
 // ホイールでカーソル中心ズーム
 stageWrap.addEventListener("wheel",(e)=>{
   if(document.getElementById("compareView").classList.contains("show")) return; // 比較ビュー中は通常スクロール
+  if(view3dShown()) return; // 3Dプレビュー中は2Dズームしない
   e.preventDefault();
   const rect=stageWrap.getBoundingClientRect();
   zoomAt(e.deltaY<0?1.12:1/1.12, e.clientX-rect.left, e.clientY-rect.top);
@@ -556,6 +616,7 @@ stageWrap.addEventListener("wheel",(e)=>{
 // 中ボタン ドラッグでキャンバス全体を移動（引き＝縮小時でも可）
 stageWrap.addEventListener("mousedown",(e)=>{
   if(e.button!==1) return;            // 中ボタンのみ
+  if(view3dShown()) return;           // 3Dプレビュー中は対象外
   e.preventDefault();
   const sx=e.clientX, sy=e.clientY, opx=panX, opy=panY;
   const prevCursor=stageWrap.style.cursor; stageWrap.style.cursor="grabbing";
@@ -1163,10 +1224,1094 @@ document.getElementById("furnModal").addEventListener("mousedown",(e)=>{ if(e.ta
 stageWrap.addEventListener("mousedown",(e)=>{
   if(e.button!==0) return;
   if(document.getElementById("compareView").classList.contains("show")) return; // 比較ビュー中は対象外
+  if(view3dShown()) return; // 3Dプレビュー中は対象外
   if(e.target.closest && e.target.closest(".furn")) return;                       // 家具の上は解除しない
   selectedId=null; furns.forEach(f=>document.getElementById("furn_"+f.id)?.classList.remove("selected"));
   document.getElementById("propBox").style.display="none";
 });
+
+// ===== 3Dウォークスルー・プレビュー =====
+// 間取り画像(1px=0.80cm)を精密に読み取って起こした壁・ドア・窓のデータ。
+// 横方向の座標・幅は「画像ピクセル」単位（×0.80でcmになる）、高さ(h)・床下がり(sill)は「cm」単位。
+const PX2CM = 0.80;
+const PLAN3D = {
+  walls: [
+    // --- 外壁（厚め） ---
+    { a:[33,167],  b:[1096,167], t:14 },   // 北（玄関側）
+    { a:[40,160],  b:[40,875],   t:14 },   // 西
+    { a:[33,868],  b:[1214,868], t:14 },   // 南（バルコニー側）
+    { a:[1089,160],b:[1089,516], t:14 },   // 東・上段（浴室の右）
+    { a:[1082,516],b:[1214,516], t:14 },   // 洋室4.6の北（外に面する）
+    { a:[1207,510],b:[1207,875], t:14 },   // 東・下段（洋室4.6の右）
+    // --- 内壁 ---
+    { a:[390,160], b:[390,875],  t:13 },   // LDKの西（玄関・トイレ・洋室6.1との境）
+    { a:[33,282],  b:[397,282],  t:13 },   // 玄関/廊下の南（トイレの北）
+    { a:[33,400],  b:[397,400],  t:13 },   // 洋室6.1の北
+    { a:[171,282], b:[171,400],  t:13 },   // クローゼット/PSの境
+    { a:[216,282], b:[216,400],  t:13 },   // PS/トイレの境
+    { a:[742,160], b:[742,523],  t:13 },   // LDK/洗面室の境
+    { a:[917,160], b:[917,523],  t:13 },   // 洗面室/浴室の境
+    { a:[917,400], b:[1089,400], t:13 },   // 浴室の南（クローゼットの北）
+    { a:[736,516], b:[1082,516], t:13 },   // 洗面室の南＋クローゼットの南
+    { a:[855,523], b:[855,862],  t:9  },   // LDK/洋室4.6（引き戸のある壁）
+  ],
+  // ドア・窓（kind: hinged=開き戸 / double=両開き / slidewood=引き戸 / slideglass=引き違い窓 / window=はめ殺し窓）
+  openings: [
+    { id:"ent",   kind:"hinged",     center:[158,167],  w:100, h:198, hinge:"max", swing:-1, label:"玄関ドア", style:"entrance" },
+    { id:"ldk",   kind:"hinged",     center:[390,226],  w:100, h:198, hinge:"max", swing:-1, label:"リビングのドア", style:"glass" },
+    { id:"toilet",kind:"hinged",     center:[332,282],  w:85,  h:198, hinge:"max", swing:+1, label:"トイレのドア" },
+    { id:"cl61",  kind:"double",     center:[98,400],   w:101, h:198, swing:+1,  label:"クローゼット(洋室6.1)" },
+    { id:"y61",   kind:"hinged",     center:[390,458],  w:103, h:198, hinge:"min", swing:-1, label:"洋室6.1のドア" },
+    { id:"wash",  kind:"hinged",     center:[792,516],  w:75,  h:198, hinge:"min", swing:-1, label:"洗面室のドア" },
+    { id:"bath",  kind:"hinged",     center:[917,342],  w:89,  h:190, hinge:"max", swing:+1, label:"浴室のドア", style:"bath" },
+    { id:"cl46",  kind:"double",     center:[1004,516], w:145, h:198, swing:+1,  label:"クローゼット(洋室4.6)" },
+    { id:"ext46", kind:"hinged",     center:[1160,516], w:87,  h:198, hinge:"max", swing:-1, label:"洋室4.6の外ドア", style:"entrance" },
+    { id:"slide", kind:"slidewood",  center:[855,747.5],w:229, h:196, label:"リビングと洋室4.6の引き戸" },
+    { id:"w61",   kind:"window",     center:[158,868],  w:220, h:110, sill:90, label:"洋室6.1の窓" },
+    { id:"wldk",  kind:"slideglass", center:[625,868],  w:220, h:197, sill:0,  label:"リビングの掃き出し窓" },
+    { id:"w46",   kind:"slideglass", center:[1148,868], w:103, h:197, sill:0,  label:"洋室4.6の掃き出し窓" },
+  ],
+  // 部屋の床（rect=[x0,y0,x1,y1]px / level=床の高さcm / mat=床材）
+  rooms: [
+    { name:"玄関",       mat:"tileDark",  level:-8,  rect:[105,167,210,282] },
+    { name:"廊下",       mat:"wood",      level:0,   rect:[210,167,390,282] },
+    { name:"トイレ",     mat:"tileWhite", level:0,   rect:[216,282,390,400] },
+    { name:"クローゼット1", mat:"wood",   level:0,   rect:[40,282,171,400] },
+    { name:"洋室6.1",    mat:"wood",      level:0,   rect:[40,400,390,868] },
+    { name:"LDK",        mat:"wood",      level:0,   poly:[[390,167],[742,167],[742,516],[855,516],[855,868],[390,868]] },
+    { name:"洗面室",     mat:"tileWhite", level:0,   rect:[742,167,917,516] },
+    { name:"浴室",       mat:"tileBath",  level:-2,  rect:[917,167,1089,400] },
+    { name:"クローゼット2", mat:"wood",   level:0,   rect:[917,400,1089,516] },
+    { name:"洋室4.6",    mat:"wood",      level:0,   rect:[855,516,1207,868] },
+    { name:"バルコニー", mat:"concrete",  level:-10, rect:[390,875,1215,992], outside:true },
+    { name:"ポーチ",     mat:"concrete",  level:-12, rect:[1096,160,1215,510], outside:true },
+    { name:"共用廊下",   mat:"concrete",  level:-12, rect:[-160,60,1300,160], outside:true },
+  ],
+  // 床から天井までの塊（メーターボックス・パイプスペース）
+  solids: [
+    { rect:[47,196,105,275],  label:"MB" },
+    { rect:[749,174,800,231], label:"PS" },
+  ],
+  // 手すり壁（バルコニー・共用廊下。高さ110cm）
+  parapets: [
+    { a:[394,986],  b:[1211,986] },   // バルコニー南
+    { a:[394,875],  b:[394,986]  },   // バルコニー西
+    { a:[1211,875], b:[1211,986] },   // バルコニー東
+    { a:[1211,160], b:[1211,510] },   // ポーチ東
+    { a:[-160,64],  b:[1300,64]  },   // 共用廊下の外側
+    { a:[-160,64],  b:[-160,160] },   // 共用廊下 西端
+    { a:[1300,64],  b:[1300,160] },   // 共用廊下 東端
+    { a:[1211,160], b:[1300,160] },   // 共用廊下 南東の縁
+  ],
+};
+
+function view3dShown(){ const v=document.getElementById("view3d"); return !!v && v.classList.contains("show"); }
+
+let _v3dApi = null;
+async function ensure3D(){
+  if(_v3dApi) return _v3dApi;
+  const [THREE_M, PLC_M, BGU_M, SVGL_M] = await Promise.all([
+    import('three'),
+    import('three/addons/controls/PointerLockControls.js'),
+    import('three/addons/utils/BufferGeometryUtils.js'),
+    import('three/addons/loaders/SVGLoader.js'),
+  ]);
+  _v3dApi = init3DWorld(THREE_M, PLC_M.PointerLockControls, BGU_M, SVGL_M.SVGLoader);
+  return _v3dApi;
+}
+document.getElementById("btn3D").onclick = async ()=>{
+  const view=document.getElementById("view3d");
+  view.classList.add("show");
+  document.getElementById("v3dLoading").style.display="flex";
+  try{
+    const api=await ensure3D();
+    api.open();
+  }catch(err){
+    console.error("3D初期化エラー:", err);
+    alert("3Dの読み込みに失敗しました。インターネット接続を確認して、もう一度お試しください。");
+    view.classList.remove("show");
+  }finally{
+    document.getElementById("v3dLoading").style.display="none";
+  }
+};
+
+// 3Dワールド本体（初回だけ構築し、以降は使い回す）
+function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
+  const C = v => v*PX2CM;               // 画像px → cm
+  const canvas = document.getElementById("view3dCanvas");
+  const view   = document.getElementById("view3d");
+
+  // --- レンダラー・シーン・カメラ ---
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 1.5));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0xcfe2f4, 7000, 26000);
+  const camera = new THREE.PerspectiveCamera(70, 1, 2, 45000);
+
+  let ceilH = 240;     // 天井の高さcm（スライダーで可変）
+  let eyeH  = 150;     // 目線の高さcm
+
+  // --- 手続きテクスチャ（Canvasで描く簡易素材） ---
+  function makeTex(w,h,draw){
+    const c=document.createElement("canvas"); c.width=w; c.height=h;
+    draw(c.getContext("2d"), w, h);
+    const t=new THREE.CanvasTexture(c);
+    t.wrapS=t.wrapT=THREE.RepeatWrapping; t.colorSpace=THREE.SRGBColorSpace;
+    t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return t;
+  }
+  const woodFloorTex = makeTex(512,512,(g)=>{      // フローリング（180cm四方ぶん）
+    g.fillStyle="#c8a97e"; g.fillRect(0,0,512,512);
+    const row=42;
+    for(let y=0,i=0;y<512;y+=row,i++){
+      for(let x=-(i%3)*170;x<512;x+=256){
+        const tone=200+((x*13+y*7)%36)-18;
+        g.fillStyle=`rgb(${tone},${(tone*0.80)|0},${(tone*0.575)|0})`;
+        g.fillRect(x,y,254,row-2);
+        g.strokeStyle="rgba(120,84,50,.35)"; g.lineWidth=1;
+        for(let k=0;k<4;k++){ const gy=y+6+((x+k*97)%(row-10)); g.beginPath(); g.moveTo(x+6,gy); g.lineTo(x+248,gy+((k%2)?2:-2)); g.stroke(); }
+      }
+      g.fillStyle="rgba(90,60,35,.5)"; g.fillRect(0,y+row-2,512,2);
+    }
+  });
+  woodFloorTex.repeat.set(1/180,1/180);
+  const woodDoorTex = makeTex(256,256,(g)=>{       // ドア用の木目（縦方向）
+    g.fillStyle="#b08a5e"; g.fillRect(0,0,256,256);
+    for(let x=0;x<256;x+=8){
+      const tone=176+((x*31)%40)-20;
+      g.fillStyle=`rgba(${tone},${(tone*0.78)|0},${(tone*0.53)|0},.6)`;
+      g.fillRect(x,0,6,256);
+    }
+    g.strokeStyle="rgba(100,66,36,.35)";
+    for(let i=0;i<10;i++){ g.beginPath(); g.moveTo((i*53)%256,0); g.bezierCurveTo((i*53)%256+14,80,(i*53)%256-10,180,(i*53)%256+6,256); g.stroke(); }
+  });
+  const tileWhiteTex = makeTex(256,256,(g)=>{      // 白タイル（100cm四方ぶん）
+    g.fillStyle="#f2f2ef"; g.fillRect(0,0,256,256);
+    g.strokeStyle="rgba(150,150,150,.55)"; g.lineWidth=2;
+    for(let i=0;i<=256;i+=64){ g.beginPath();g.moveTo(i,0);g.lineTo(i,256);g.stroke(); g.beginPath();g.moveTo(0,i);g.lineTo(256,i);g.stroke(); }
+  });
+  tileWhiteTex.repeat.set(1/100,1/100);
+  const tileBathTex = makeTex(256,256,(g)=>{       // 浴室タイル
+    g.fillStyle="#dde6ea"; g.fillRect(0,0,256,256);
+    g.strokeStyle="rgba(130,150,160,.6)"; g.lineWidth=2;
+    for(let i=0;i<=256;i+=52){ g.beginPath();g.moveTo(i,0);g.lineTo(i,256);g.stroke(); g.beginPath();g.moveTo(0,i);g.lineTo(256,i);g.stroke(); }
+  });
+  tileBathTex.repeat.set(1/80,1/80);
+  const tileDarkTex = makeTex(256,256,(g)=>{       // 玄関の土間タイル
+    g.fillStyle="#8e8880"; g.fillRect(0,0,256,256);
+    g.strokeStyle="rgba(60,56,50,.6)"; g.lineWidth=3;
+    for(let i=0;i<=256;i+=85){ g.beginPath();g.moveTo(i,0);g.lineTo(i,256);g.stroke(); g.beginPath();g.moveTo(0,i);g.lineTo(256,i);g.stroke(); }
+  });
+  tileDarkTex.repeat.set(1/90,1/90);
+  const concreteTex = makeTex(256,256,(g)=>{       // コンクリート
+    g.fillStyle="#b6b6b2"; g.fillRect(0,0,256,256);
+    for(let i=0;i<900;i++){ const x=(i*97)%256,y=(i*57)%256,v=170+((i*31)%40); g.fillStyle=`rgba(${v},${v},${v-4},.5)`; g.fillRect(x,y,2,2); }
+  });
+  concreteTex.repeat.set(1/150,1/150);
+  const grassTex = makeTex(256,256,(g)=>{          // 芝生
+    g.fillStyle="#7fae62"; g.fillRect(0,0,256,256);
+    for(let i=0;i<1400;i++){ const x=(i*89)%256,y=(i*53)%256; g.fillStyle=`rgba(${70+((i*13)%50)},${140+((i*29)%50)},${60+((i*7)%40)},.6)`; g.fillRect(x,y,2,3); }
+  });
+  grassTex.repeat.set(1/220,1/220);
+
+  // --- マテリアル ---
+  const M = {
+    wall:      new THREE.MeshStandardMaterial({ color:0xf3f0ea, roughness:.92 }),
+    ceil:      new THREE.MeshStandardMaterial({ color:0xfaf9f5, roughness:.95, side:THREE.DoubleSide, emissive:0x8e8c86, emissiveIntensity:.55 }),
+    woodFloor: new THREE.MeshStandardMaterial({ map:woodFloorTex, roughness:.6, side:THREE.DoubleSide }),
+    tileWhite: new THREE.MeshStandardMaterial({ map:tileWhiteTex, roughness:.5, side:THREE.DoubleSide }),
+    tileBath:  new THREE.MeshStandardMaterial({ map:tileBathTex, roughness:.4, side:THREE.DoubleSide }),
+    tileDark:  new THREE.MeshStandardMaterial({ map:tileDarkTex, roughness:.8, side:THREE.DoubleSide }),
+    concrete:  new THREE.MeshStandardMaterial({ map:concreteTex, roughness:.95, side:THREE.DoubleSide }),
+    facade:    new THREE.MeshStandardMaterial({ color:0xd8d4cc, roughness:.9 }),
+    woodDoor:  new THREE.MeshStandardMaterial({ map:woodDoorTex, roughness:.7 }),
+    doorFrame: new THREE.MeshStandardMaterial({ color:0x9a7a55, roughness:.75 }),
+    entDoor:   new THREE.MeshStandardMaterial({ color:0x4a5a6e, roughness:.55, metalness:.35 }),
+    alum:      new THREE.MeshStandardMaterial({ color:0xd9dde0, roughness:.4, metalness:.4 }),
+    glass:     new THREE.MeshStandardMaterial({ color:0xcfe6ff, roughness:.06, metalness:.25, transparent:true, opacity:.22, side:THREE.DoubleSide }),
+    frosted:   new THREE.MeshStandardMaterial({ color:0xffffff, roughness:.6, transparent:true, opacity:.55, side:THREE.DoubleSide }),
+    whiteBody: new THREE.MeshStandardMaterial({ color:0xf6f6f4, roughness:.5 }),
+    steel:     new THREE.MeshStandardMaterial({ color:0x9aa2a8, roughness:.35, metalness:.7 }),
+    black:     new THREE.MeshStandardMaterial({ color:0x24262a, roughness:.5 }),
+    counterTop:new THREE.MeshStandardMaterial({ color:0xe8e6e0, roughness:.35 }),
+  };
+  const floorMats = { wood:M.woodFloor, tileWhite:M.tileWhite, tileBath:M.tileBath, tileDark:M.tileDark, concrete:M.concrete };
+
+  // --- 空・太陽・外の景色 ---
+  const sky = new THREE.Mesh(
+    new THREE.SphereGeometry(30000, 24, 16),
+    new THREE.ShaderMaterial({
+      side: THREE.BackSide, depthWrite:false, fog:false,
+      uniforms: { top:{value:new THREE.Color(0x2e6fd4)}, mid:{value:new THREE.Color(0x8fc2f2)}, bot:{value:new THREE.Color(0xe8f3fc)} },
+      vertexShader: "varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }",
+      fragmentShader: "uniform vec3 top; uniform vec3 mid; uniform vec3 bot; varying vec3 vP; void main(){ float h=normalize(vP).y; vec3 c=h>0.0? mix(mid,top,pow(h,0.6)) : mix(mid,bot,clamp(-h*4.0,0.0,1.0)); gl_FragColor=vec4(c,1.0); }",
+    })
+  );
+  scene.add(sky);
+  scene.add(new THREE.HemisphereLight(0xcfe0f5, 0xb5b0a6, 1.1));
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const sun = new THREE.DirectionalLight(0xfff4e2, 2.6);
+  sun.position.set(1400, 2100, 3600);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048,2048);
+  sun.shadow.camera.left=-1600; sun.shadow.camera.right=1600;
+  sun.shadow.camera.top=1600; sun.shadow.camera.bottom=-1600;
+  sun.shadow.camera.near=200; sun.shadow.camera.far=9000;
+  sun.shadow.normalBias=3;
+  sun.target.position.set(480,0,420);
+  scene.add(sun, sun.target);
+
+  const GROUND_Y=-300;   // 2階想定：室内の床から3m下が地面
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(60000,60000), new THREE.MeshStandardMaterial({ map:grassTex, roughness:1 }));
+  ground.rotation.x=-Math.PI/2; ground.position.y=GROUND_Y; ground.receiveShadow=true;
+  scene.add(ground);
+  // 道路（南側）
+  const road = new THREE.Mesh(new THREE.BoxGeometry(60000,4,500), new THREE.MeshStandardMaterial({ color:0x6f7276, roughness:.95 }));
+  road.position.set(0,GROUND_Y+2,2100); road.receiveShadow=true; scene.add(road);
+  // 木
+  function tree(x,z,s){
+    const g=new THREE.Group();
+    const trunk=new THREE.Mesh(new THREE.CylinderGeometry(9*s,13*s,120*s,7), new THREE.MeshStandardMaterial({color:0x7a5a3a,roughness:.9}));
+    trunk.position.y=60*s; trunk.castShadow=true; g.add(trunk);
+    const leafM=new THREE.MeshStandardMaterial({color:0x4e8f4a,roughness:.85});
+    [[0,150,0,85],[45,120,25,55],[-40,125,-20,50]].forEach(p=>{ const l=new THREE.Mesh(new THREE.SphereGeometry(p[3]*s,10,8),leafM); l.position.set(p[0]*s,p[1]*s,p[2]*s); l.castShadow=true; g.add(l); });
+    g.position.set(x,GROUND_Y,z); scene.add(g);
+  }
+  tree(150,1500,1.4); tree(700,1650,1.1); tree(1250,1480,1.5); tree(-500,1600,1.2); tree(1800,1550,1.0);
+  tree(-700,-900,1.3); tree(1900,-850,1.2);
+  // 遠くの建物（窓の格子模様つき）
+  const bldTex = makeTex(256,256,(g)=>{
+    g.fillStyle="#cdd1d6"; g.fillRect(0,0,256,256);
+    for(let y=16;y<256;y+=42) for(let x=14;x<256;x+=34){
+      g.fillStyle=((x*7+y*13)%5>0)?"#7d8fa3":"#f4efdb";
+      g.fillRect(x,y,22,26);
+    }
+  });
+  const bldTex2 = makeTex(256,256,(g)=>{
+    g.fillStyle="#c4bdb0"; g.fillRect(0,0,256,256);
+    for(let y=18;y<256;y+=46) for(let x=12;x<256;x+=38){
+      g.fillStyle=((x*11+y*7)%4>0)?"#6f7d8c":"#efe8d2";
+      g.fillRect(x,y,26,28);
+    }
+  });
+  const bldM=new THREE.MeshStandardMaterial({ map:bldTex, roughness:.85 });
+  const bldM2=new THREE.MeshStandardMaterial({ map:bldTex2, roughness:.85 });
+  [[-1800,2900,900,700,1200,bldM],[300,3300,1100,800,900,bldM2],[2200,3000,800,600,1500,bldM],[3400,1200,700,700,800,bldM2],[-2400,600,800,900,1100,bldM2],[-1500,-2000,1200,700,1000,bldM],[1500,-2400,900,800,1400,bldM2]].forEach(b=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(b[2],b[4],b[3]),b[5]);
+    m.position.set(b[0],GROUND_Y+b[4]/2,b[1]); m.castShadow=true; scene.add(m);
+  });
+  // 雲（うっすら）
+  const cloudM=new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:.85, fog:false });
+  [[-4000,5200,-6000,700],[2000,6000,-8000,900],[7000,5600,2000,800],[-6000,5000,4000,650],[1000,6500,9000,1000]].forEach(c=>{
+    const m=new THREE.Mesh(new THREE.SphereGeometry(c[3],10,7),cloudM); m.position.set(c[0],c[1],c[2]); m.scale.y=.32; scene.add(m);
+  });
+
+  // --- 建物の土台・スラブ・隣戸 ---
+  function slab(x0,y0,x1,y1, yb,yt, mat){ // 画像px矩形 → 箱
+    const m=new THREE.Mesh(new THREE.BoxGeometry(C(x1-x0), yt-yb, C(y1-y0)), mat);
+    m.position.set(C((x0+x1)/2),(yb+yt)/2,C((y0+y1)/2));
+    m.castShadow=true; m.receiveShadow=true; scene.add(m); return m;
+  }
+  slab(-160,56,1300,1000, GROUND_Y,-12, M.facade);        // 建物の下階部分（土台）
+  slab(33,160,1214,875, -12,-0.5, M.concrete);            // 室内の床スラブ
+  slab(204,167,212,282, -8,0, M.doorFrame);               // 玄関の上がり框（段差の縁）
+
+  // --- 静的な衝突セグメント（壁の腰まわり） ---
+  let staticSegs=[]; let doorList=[]; let furnSegs=[];
+  function addSeg(x1,z1,x2,z2,half){ staticSegs.push({x1,z1,x2,z2,half}); }
+
+  // --- 壁の生成（開口の穴あけ込み。天井高変更のたび作り直す） ---
+  let structGroup=null;
+  function wallInfo(w){
+    const ax=C(w.a[0]), az=C(w.a[1]), bx=C(w.b[0]), bz=C(w.b[1]);
+    const horiz = (w.a[1]===w.b[1]);
+    const len = horiz? Math.abs(bx-ax) : Math.abs(bz-az);
+    return { ax,az,bx,bz,horiz,len, t:C(w.t),
+      sx: horiz? Math.min(ax,bx) : ax,  sz: horiz? az : Math.min(az,bz) };
+  }
+  function openingsOn(w, wi){
+    const res=[];
+    PLAN3D.openings.forEach(op=>{
+      const cx=C(op.center[0]), cz=C(op.center[1]), wcm=C(op.w);
+      if(wi.horiz){
+        if(Math.abs(cz-wi.az)>1) return;
+        const s=cx-wi.sx; if(s<-1||s>wi.len+1) return;
+        res.push({ op, s0:s-wcm/2, s1:s+wcm/2, sill:op.sill||0, h:op.h });
+      } else {
+        if(Math.abs(cx-wi.ax)>1) return;
+        const s=cz-wi.sz; if(s<-1||s>wi.len+1) return;
+        res.push({ op, s0:s-wcm/2, s1:s+wcm/2, sill:op.sill||0, h:op.h });
+      }
+    });
+    return res.sort((a,b)=>a.s0-b.s0);
+  }
+  function buildStructure(){
+    if(structGroup){
+      scene.remove(structGroup);
+      structGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
+    }
+    structGroup=new THREE.Group();
+    staticSegs=[];
+    const wallGeos=[];
+    function pushBox(wi, s0,s1, y0,y1){
+      if(s1-s0<0.5||y1-y0<0.5) return;
+      const len=s1-s0, mid=(s0+s1)/2, my=(y0+y1)/2;
+      let g;
+      if(wi.horiz){ g=new THREE.BoxGeometry(len,y1-y0,wi.t); g.translate(wi.sx+mid,my,wi.az); }
+      else        { g=new THREE.BoxGeometry(wi.t,y1-y0,len); g.translate(wi.ax,my,wi.sz+mid); }
+      wallGeos.push(g);
+      if(y0<=1 && y1>60){ // 床に接する壁だけ衝突対象
+        if(wi.horiz) addSeg(wi.sx+s0,wi.az,wi.sx+s1,wi.az,wi.t/2);
+        else         addSeg(wi.ax,wi.sz+s0,wi.ax,wi.sz+s1,wi.t/2);
+      }
+    }
+    PLAN3D.walls.forEach(w=>{
+      const wi=wallInfo(w); const ops=openingsOn(w,wi);
+      let cur=0;
+      ops.forEach(o=>{
+        pushBox(wi,cur,Math.max(cur,o.s0),0,ceilH);
+        const top=o.sill+o.h;
+        if(top<ceilH-0.5) pushBox(wi,Math.max(0,o.s0),Math.min(wi.len,o.s1),top,ceilH);  // 垂れ壁
+        if(o.sill>0.5)    pushBox(wi,Math.max(0,o.s0),Math.min(wi.len,o.s1),0,o.sill);   // 窓下の腰壁
+        cur=Math.max(cur,o.s1);
+      });
+      pushBox(wi,cur,wi.len,0,ceilH);
+    });
+    // メーターボックス・PS（床から天井までの塊）
+    PLAN3D.solids.forEach(s=>{
+      const [x0,y0,x1,y1]=s.rect;
+      const g=new THREE.BoxGeometry(C(x1-x0),ceilH,C(y1-y0)); g.translate(C((x0+x1)/2),ceilH/2,C((y0+y1)/2));
+      wallGeos.push(g);
+      addSeg(C(x0),C(y0),C(x1),C(y0),1); addSeg(C(x1),C(y0),C(x1),C(y1),1);
+      addSeg(C(x1),C(y1),C(x0),C(y1),1); addSeg(C(x0),C(y1),C(x0),C(y0),1);
+    });
+    const wallMesh=new THREE.Mesh(BGU.mergeGeometries(wallGeos), M.wall);
+    wallMesh.castShadow=true; wallMesh.receiveShadow=true;
+    structGroup.add(wallMesh);
+    wallGeos.forEach(g=>g.dispose());
+
+    // 手すり壁（パラペット）
+    const paraGeos=[];
+    PLAN3D.parapets.forEach(p=>{
+      const ax=C(p.a[0]),az=C(p.a[1]),bx=C(p.b[0]),bz=C(p.b[1]);
+      const horiz=(p.a[1]===p.b[1]); const len=horiz?Math.abs(bx-ax):Math.abs(bz-az);
+      const g = horiz? new THREE.BoxGeometry(len,110,8) : new THREE.BoxGeometry(8,110,len);
+      g.translate((ax+bx)/2, -12+55, (az+bz)/2);
+      paraGeos.push(g);
+      // 上に笠木（手すりの上の板）
+      const g2 = horiz? new THREE.BoxGeometry(len+4,6,14) : new THREE.BoxGeometry(14,6,len+4);
+      g2.translate((ax+bx)/2, -12+113, (az+bz)/2);
+      paraGeos.push(g2);
+      addSeg(ax,az,bx,bz,6);
+    });
+    const paraMesh=new THREE.Mesh(BGU.mergeGeometries(paraGeos), M.concrete);
+    paraMesh.castShadow=true; paraMesh.receiveShadow=true;
+    structGroup.add(paraMesh);
+    paraGeos.forEach(g=>g.dispose());
+
+    // 隣の住戸（左右）
+    const nb1=new THREE.Mesh(new THREE.BoxGeometry(C(193),ceilH+14,C(715)), M.facade);
+    nb1.position.set(C(-160+193/2),(ceilH+14)/2-7+7,C((160+875)/2)); nb1.position.y=(ceilH+14)/2; nb1.castShadow=true; nb1.receiveShadow=true;
+    structGroup.add(nb1);
+    addSeg(C(-160),C(160),C(33),C(160),2);
+    const nb2=new THREE.Mesh(new THREE.BoxGeometry(C(86),ceilH+14,C(365)), M.facade);
+    nb2.position.set(C(1214+43),(ceilH+14)/2,C((510+875)/2)); nb2.castShadow=true; nb2.receiveShadow=true;
+    structGroup.add(nb2);
+    addSeg(C(1214),C(510),C(1300),C(510),2);
+    addSeg(C(1214),C(510),C(1214),C(875),2);
+
+    // 部屋の床と天井
+    PLAN3D.rooms.forEach(r=>{
+      let pts = r.poly ? r.poly : [[r.rect[0],r.rect[1]],[r.rect[2],r.rect[1]],[r.rect[2],r.rect[3]],[r.rect[0],r.rect[3]]];
+      const shape=new THREE.Shape();
+      pts.forEach((p,i)=>{ const x=C(p[0]), z=C(p[1]); i?shape.lineTo(x,z):shape.moveTo(x,z); });
+      const geo=new THREE.ShapeGeometry(shape); geo.rotateX(Math.PI/2);
+      const floor=new THREE.Mesh(geo, floorMats[r.mat]||M.woodFloor);
+      floor.position.y=(r.level||0)+0.3; floor.receiveShadow=true;
+      structGroup.add(floor);
+      if(!r.outside){
+        const cgeo=geo.clone();
+        const ceilMesh=new THREE.Mesh(cgeo, M.ceil);
+        ceilMesh.position.y=ceilH; ceilMesh.receiveShadow=false;
+        ceilMesh.userData.hideInTop=true;      // 上空ビューでは隠して間取りを見せる
+        structGroup.add(ceilMesh);
+      }
+    });
+
+    // 屋根（上の階のスラブ。バルコニー・共用廊下の天井にもなる）
+    const roof=new THREE.Mesh(new THREE.BoxGeometry(C(1460),14,C(944)), M.facade);
+    roof.position.set(C((-160+1300)/2), ceilH+7, C((56+1000)/2));
+    roof.castShadow=true; roof.receiveShadow=true;
+    roof.userData.hideInTop=true;
+    structGroup.add(roof);
+
+    // 天井照明（丸いシーリングライト＋光源）
+    const lightSpots=[[620,520,"big"],[215,630,"big"],[1030,690,"big"],[300,225,"small"],[830,350,"small"],[157,225,"small"],[303,340,"small"],[1003,283,"small"]];
+    lightSpots.forEach(sp=>{
+      const big=sp[2]==="big";
+      const fix=new THREE.Mesh(new THREE.CylinderGeometry(big?26:14,big?28:16,7,20),
+        new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xfff6dd, emissiveIntensity:.9, roughness:.4 }));
+      fix.position.set(C(sp[0]),ceilH-4,C(sp[1]));
+      structGroup.add(fix);
+      const pl=new THREE.PointLight(0xfff1da, big?2.4:1.5, big?780:450, 1);
+      pl.position.set(C(sp[0]),ceilH-22,C(sp[1]));
+      structGroup.add(pl);
+    });
+
+    // キッチンカウンターなどの造作の衝突（形は fixtures で作成済み）
+    addSeg(C(497),C(370),C(737),C(370),2); addSeg(C(737),C(370),C(737),C(455),2);
+    addSeg(C(737),C(455),C(617),C(455),2); addSeg(C(617),C(492),C(497),C(492),2);
+    addSeg(C(497),C(492),C(497),C(370),2); addSeg(C(617),C(455),C(617),C(492),2);
+    addSeg(C(750),C(295),C(805),C(295),2); addSeg(C(805),C(295),C(805),C(375),2); addSeg(C(805),C(375),C(750),C(375),2); // 洗面台
+    addSeg(C(927),C(182),C(1077),C(182),2); addSeg(C(927),C(267),C(1077),C(267),2); addSeg(C(927),C(182),C(927),C(267),2); addSeg(C(1077),C(182),C(1077),C(267),2); // 浴槽
+
+    scene.add(structGroup);
+  }
+
+  // --- ドア・窓（開閉できる建具） ---
+  const doorsGroup=new THREE.Group(); scene.add(doorsGroup);
+  const rayTargets=[];
+  function easeInOut(t){ return t<0.5? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2; }
+
+  function doorHandle(mat){
+    const h=new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,14,10), mat||M.alum);
+    h.rotation.x=Math.PI/2; return h;
+  }
+  // 木製ドアの1枚（横w×縦h、厚み4）origin=ヒンジ側の端・床
+  function makeLeaf(w,h,style){
+    const g=new THREE.Group();
+    const mat = style==="entrance"? M.entDoor : style==="bath"? M.whiteBody : M.woodDoor;
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(w-1.5,h-2,4), mat);
+    panel.position.set(w/2,h/2,0); panel.castShadow=true;
+    panel.userData.isDoor=true; g.add(panel);
+    if(style==="glass"){ // すりガラスの縦スリット入り
+      const gl=new THREE.Mesh(new THREE.BoxGeometry(14,h-40,4.6), M.frosted);
+      gl.position.set(w/2,h/2,0); g.add(gl);
+    }
+    if(style==="bath"){ // 浴室ドアは樹脂パネル＋曇りガラス
+      const gl=new THREE.Mesh(new THREE.BoxGeometry(w-16,h-40,4.6), M.frosted);
+      gl.position.set(w/2,h/2,0); g.add(gl);
+    }
+    const hd=doorHandle(); hd.position.set(w-9,95,3.5); g.add(hd);
+    const hd2=doorHandle(); hd2.position.set(w-9,95,-3.5); g.add(hd2);
+    return g;
+  }
+  // 障子風の引き戸パネル（木枠＋すりガラス）
+  function makeShoji(w,h){
+    const g=new THREE.Group();
+    const fr=M.doorFrame;
+    const t=3.4;
+    [[w/2,h-3,w,6],[w/2,3,w,6]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(p[2],p[3],t),fr); m.position.set(p[0],p[1],0); m.castShadow=true; m.userData.isDoor=true; g.add(m); });
+    [[3,h/2],[w-3,h/2]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(6,h,t),fr); m.position.set(p[0],p[1],0); m.castShadow=true; m.userData.isDoor=true; g.add(m); });
+    const gl=new THREE.Mesh(new THREE.BoxGeometry(w-10,h-10,1.2), M.frosted);
+    gl.position.set(w/2,h/2,0); gl.userData.isDoor=true; g.add(gl);
+    return g;
+  }
+  // ガラス窓のパネル（アルミ枠＋透明ガラス）
+  function makeGlassPanel(w,h){
+    const g=new THREE.Group();
+    [[w/2,h-2.5,w,5],[w/2,2.5,w,5]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(p[2],p[3],3),M.alum); m.position.set(p[0],p[1],0); m.userData.isDoor=true; g.add(m); });
+    [[2.5,h/2],[w-2.5,h/2]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(5,h,3),M.alum); m.position.set(p[0],p[1],0); m.userData.isDoor=true; g.add(m); });
+    const gl=new THREE.Mesh(new THREE.PlaneGeometry(w-6,h-6), M.glass);
+    gl.position.set(w/2,h/2,0); gl.userData.isDoor=true; g.add(gl);
+    return g;
+  }
+
+  class Door3D{
+    // wi: 壁情報, o: 開口情報（s0/s1は壁沿いcm）
+    constructor(o, wi){
+      this.op=o.op; this.kind=o.op.kind; this.label=o.op.label;
+      this.t=0; this.state="closed"; this.speed=1/0.55;
+      this.group=new THREE.Group();
+      const U = wi.horiz? {x:1,z:0} : {x:0,z:1};        // 壁沿いの向き
+      const N = wi.horiz? {x:0,z:1} : {x:1,z:0};        // 壁と直角の向き
+      const A = wi.horiz? {x:wi.sx+o.s0, z:wi.az} : {x:wi.ax, z:wi.sz+o.s0};
+      const B = {x:A.x+U.x*(o.s1-o.s0), z:A.z+U.z*(o.s1-o.s0)};
+      const w=o.s1-o.s0, h=o.h, sill=o.sill||0;
+      this.A=A; this.B=B; this.U=U; this.N=N; this.w=w; this.wallT=wi.t;
+      this.baseSeg={x1:A.x,z1:A.z,x2:B.x,z2:B.z,half:Math.max(3,wi.t/2)};
+      const swing=this.op.swing||1;
+
+      if(this.kind==="hinged"){
+        const hingeAtMax = this.op.hinge==="max";
+        const H = hingeAtMax? B : A;
+        const dir = hingeAtMax? {x:-U.x,z:-U.z} : U;
+        this.pivot=new THREE.Group();
+        this.pivot.position.set(H.x,sill,H.z);
+        this.closedYaw=Math.atan2(-dir.z,dir.x);
+        const openDir={x:N.x*swing, z:N.z*swing};
+        let d=Math.atan2(-openDir.z,openDir.x)-this.closedYaw;
+        while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
+        this.openDelta=d*1.06;   // 約95度開く
+        this.pivot.rotation.y=this.closedYaw;
+        const leaf=makeLeaf(w-3,h,this.op.style);
+        leaf.position.x=1.5;
+        this.pivot.add(leaf);
+        this.group.add(this.pivot);
+      }
+      else if(this.kind==="double"){
+        this.pivots=[];
+        [[A,U,1],[B,{x:-U.x,z:-U.z},-1]].forEach(cfg=>{
+          const pv=new THREE.Group(); pv.position.set(cfg[0].x,sill,cfg[0].z);
+          const yaw=Math.atan2(-cfg[1].z,cfg[1].x);
+          const openDir={x:N.x*swing,z:N.z*swing};
+          let d=Math.atan2(-openDir.z,openDir.x)-yaw;
+          while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI;
+          pv.userData={closedYaw:yaw, delta:d*1.02};
+          pv.rotation.y=yaw;
+          const leaf=makeLeaf(w/2-2,h,this.op.style);
+          leaf.position.x=1;
+          pv.add(leaf);
+          this.pivots.push(pv); this.group.add(pv);
+        });
+      }
+      else if(this.kind==="slidewood"){
+        // 引き違いの木戸2枚。開けると2枚とも北側（s0側）の壁に重なる
+        const pw=w/2+3;
+        this.panels=[];
+        [0,1].forEach(i=>{
+          const p=makeShoji(pw,h);
+          p.rotation.y = wi.horiz? 0 : -Math.PI/2;   // 縦向きの壁ではパネルも90度回す
+          const off=(i===0? -1:1)*3.2;   // 2本のレールに振り分け
+          p.position.set(A.x+U.x*(i*(w/2-3)) + N.x*off, sill, A.z+U.z*(i*(w/2-3)) + N.z*off);
+          p.userData={ closed:p.position.clone(), slide:new THREE.Vector3(-U.x*(w/2)*(i===0?1:2)*0.98, 0, -U.z*(w/2)*(i===0?1:2)*0.98).multiplyScalar(i===0?1:1) };
+          if(i===1) p.userData.slide.set(-U.x*(w-pw+3)*0.99, 0, -U.z*(w-pw+3)*0.99);
+          else p.userData.slide.set(-U.x*(pw-6), 0, -U.z*(pw-6));
+          this.panels.push(p); this.group.add(p);
+        });
+      }
+      else if(this.kind==="slideglass"){
+        // 引き違いのガラス窓2枚。開けると片方がもう片方に重なる
+        const pw=w/2+2;
+        this.panels=[];
+        [0,1].forEach(i=>{
+          const p=makeGlassPanel(pw,h);
+          p.rotation.y = wi.horiz? 0 : -Math.PI/2;
+          const off=(i===0? -1:1)*2.2;
+          p.position.set(A.x+U.x*(i*(w/2-2)) + N.x*off, sill, A.z+U.z*(i*(w/2-2)) + N.z*off);
+          if(i===0) p.userData={ closed:p.position.clone(), slide:new THREE.Vector3(U.x*(w/2-2),0,U.z*(w/2-2)) };
+          else      p.userData={ closed:p.position.clone(), slide:new THREE.Vector3(0,0,0) };
+          this.panels.push(p); this.group.add(p);
+        });
+        // 開けたとき通れるのは s0 側の半分 → 閉じている側のセグメントを常に残す
+        this.fixedSeg={x1:A.x+U.x*w/2, z1:A.z+U.z*w/2, x2:B.x, z2:B.z, half:Math.max(3,wi.t/2)};
+      }
+      this.group.traverse(obj=>{ if(obj.isMesh){ obj.userData.door=this; } });
+      doorsGroup.add(this.group);
+      rayTargets.push(this.group);
+    }
+    get isOpen(){ return this.state==="open"||this.state==="opening"; }
+    toggle(){ this.state=this.isOpen? "closing":"opening"; }
+    update(dt){
+      if(this.state==="opening"){ this.t=Math.min(1,this.t+dt*this.speed); if(this.t===1) this.state="open"; }
+      else if(this.state==="closing"){ this.t=Math.max(0,this.t-dt*this.speed); if(this.t===0) this.state="closed"; }
+      else return;
+      const e=easeInOut(this.t);
+      if(this.kind==="hinged"){ this.pivot.rotation.y=this.closedYaw+this.openDelta*e; }
+      else if(this.kind==="double"){ this.pivots.forEach(pv=>{ pv.rotation.y=pv.userData.closedYaw+pv.userData.delta*e; }); }
+      else { this.panels.forEach(p=>{ p.position.copy(p.userData.closed).addScaledVector(p.userData.slide,e); }); }
+    }
+    colSegs(){
+      if(this.t<0.35) return [this.baseSeg];
+      if(this.kind==="slideglass") return [this.fixedSeg];
+      if(this.kind==="slidewood") return [];
+      return [];
+    }
+  }
+
+  // 開口まわりの枠（ドア枠・窓枠）と、はめ殺し窓のガラス
+  function buildOpeningTrims(){
+    PLAN3D.walls.forEach(w=>{
+      const wi=wallInfo(w);
+      openingsOn(w,wi).forEach(o=>{
+        const U = wi.horiz? {x:1,z:0} : {x:0,z:1};
+        const N = wi.horiz? {x:0,z:1} : {x:1,z:0};
+        const A = wi.horiz? {x:wi.sx+o.s0, z:wi.az} : {x:wi.ax, z:wi.sz+o.s0};
+        const wcm=o.s1-o.s0, h=o.h, sill=o.sill||0;
+        const isWin=(o.op.kind==="window"||o.op.kind==="slideglass");
+        const fm=isWin? M.alum : M.doorFrame;
+        const ft=wi.t+3, fw=4;
+        function bar(px,pz,py,len,vertical,along){
+          let g;
+          if(vertical) g=new THREE.BoxGeometry(along?ft:fw, len, along?fw:ft);
+          else if(wi.horiz) g=new THREE.BoxGeometry(len,fw,ft);
+          else g=new THREE.BoxGeometry(ft,fw,len);
+          const m=new THREE.Mesh(g,fm); m.position.set(px,py,pz); m.castShadow=true; doorsGroup.add(m);
+        }
+        // 縦枠2本
+        [[A.x,A.z],[A.x+U.x*wcm,A.z+U.z*wcm]].forEach(p=>{
+          const g=new THREE.BoxGeometry(wi.horiz?fw:ft, h, wi.horiz?ft:fw);
+          const m=new THREE.Mesh(g,fm); m.position.set(p[0],sill+h/2,p[1]); m.castShadow=true; doorsGroup.add(m);
+        });
+        // 上枠
+        bar(A.x+U.x*wcm/2, A.z+U.z*wcm/2, sill+h-2, wcm, false);
+        // 下枠（窓のみ。掃き出し窓はレール、腰窓は窓台）
+        if(isWin) bar(A.x+U.x*wcm/2, A.z+U.z*wcm/2, sill+2, wcm, false);
+        // はめ殺し窓はガラスをはめる
+        if(o.op.kind==="window"){
+          const g=new THREE.PlaneGeometry(wcm-8,h-8);
+          const m=new THREE.Mesh(g,M.glass);
+          m.position.set(A.x+U.x*wcm/2, sill+h/2, A.z+U.z*wcm/2);
+          if(!wi.horiz) m.rotation.y=Math.PI/2;
+          doorsGroup.add(m);
+          // 真ん中の桟
+          const mull=new THREE.Mesh(new THREE.BoxGeometry(wi.horiz?3:wi.t+2, h-6, wi.horiz?wi.t+2:3), M.alum);
+          mull.position.set(A.x+U.x*wcm/2, sill+h/2, A.z+U.z*wcm/2);
+          doorsGroup.add(mull);
+        }
+        // 開閉できる建具を生成
+        if(o.op.kind!=="window") doorList.push(new Door3D(o,wi));
+      });
+    });
+  }
+
+  // --- 造作（キッチン・トイレ・洗面台・浴槽・エアコン） ---
+  function buildFixtures(){
+    const g=new THREE.Group();
+    function box(mat, x0,y0,x1,y1, yb,yt, cast){ // 画像px矩形
+      const m=new THREE.Mesh(new THREE.BoxGeometry(C(x1-x0),yt-yb,C(y1-y0)),mat);
+      m.position.set(C((x0+x1)/2),(yb+yt)/2,C((y0+y1)/2));
+      m.castShadow=cast!==false; m.receiveShadow=true; g.add(m); return m;
+    }
+    // キッチンカウンター（流し台＋コンロ）
+    box(M.whiteBody, 497,372, 737,453, 0,82);
+    box(M.counterTop,495,370, 739,455, 82,85);
+    box(M.whiteBody, 497,455, 617,490, 0,82);
+    box(M.counterTop,495,455, 619,492, 82,85);
+    const sink=box(M.steel, 512,382, 595,443, 84.5,86.5, false);
+    sink.material=M.steel;
+    // 蛇口
+    const fc=new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.8,16,10),M.alum); fc.position.set(C(553),93,C(380)); g.add(fc);
+    const fc2=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,12,10),M.alum); fc2.rotation.x=Math.PI/2; fc2.position.set(C(553),100,C(386)); g.add(fc2);
+    // コンロ（黒いガラストップ＋バーナー3口）
+    box(M.black, 645,375, 735,450, 85,86.5, false);
+    [[663,392],[717,392],[690,428]].forEach(p=>{
+      const b=new THREE.Mesh(new THREE.CylinderGeometry(7.5,7.5,1.2,18),M.steel);
+      b.position.set(C(p[0]),87.2,C(p[1])); g.add(b);
+    });
+    // レンジフード（天井まで届くダクト付き）
+    box(M.steel, 645,370, 735,430, ceilH-75,ceilH-45);
+    box(M.steel, 665,382, 715,420, ceilH-45,ceilH);
+    // トイレ（タンク＋便器）
+    box(M.whiteBody, 228,318, 248,368, 20,60);                     // タンク
+    const bowl=new THREE.Mesh(new THREE.CylinderGeometry(17,13,38,18),M.whiteBody);
+    bowl.position.set(C(275),19,C(343)); bowl.scale.x=1.25; bowl.castShadow=true; g.add(bowl);
+    const seat=new THREE.Mesh(new THREE.CylinderGeometry(19,19,4,18),M.whiteBody);
+    seat.position.set(C(275),40,C(343)); seat.scale.x=1.2; g.add(seat);
+    // 洗面台（キャビネット＋ミラー）
+    box(M.whiteBody, 750,297, 803,373, 0,78);
+    box(M.counterTop,748,295, 805,375, 78,82);
+    const bs=new THREE.Mesh(new THREE.CylinderGeometry(15,11,8,16),M.whiteBody); bs.position.set(C(776),85,C(335)); bs.scale.z=1.2; g.add(bs);
+    const mir=new THREE.Mesh(new THREE.BoxGeometry(2.5,70,C(70)),new THREE.MeshStandardMaterial({color:0xcfe0ea,roughness:.05,metalness:.6}));
+    mir.position.set(C(742)+7,135,C(335)); g.add(mir);
+    // 浴槽＋シャワー
+    box(M.whiteBody, 927,182, 1077,267, -2,53);
+    box(M.tileBath===undefined?M.whiteBody:M.black, 940,192, 1064,257, 53,54, false).material=new THREE.MeshStandardMaterial({color:0x9fb9c4,roughness:.2});
+    const sh=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,60,8),M.alum); sh.position.set(C(930),110,C(320)); g.add(sh);
+    // エアコン2台（南の壁の高い位置）
+    [[335],[450]].forEach(p=>{
+      const ac=new THREE.Mesh(new THREE.BoxGeometry(76,26,20),M.whiteBody);
+      ac.position.set(C(p[0]), 212, C(868)-9-10); ac.castShadow=true; g.add(ac);
+    });
+    scene.add(g);
+  }
+
+  // --- 家具の3D化 ---
+  const furnGroup=new THREE.Group(); scene.add(furnGroup);
+  const svgLoader=new SVGLoader();
+  function fMat(color,mul,rough){ const c=new THREE.Color(color||"#cccccc"); if(mul&&mul!==1) c.multiplyScalar(mul); return new THREE.MeshStandardMaterial({ color:c, roughness:rough==null?.8:rough }); }
+  function bx(g,mat,w,h,d,x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; g.add(m); return m; }
+  function cyl(g,mat,r1,r2,h,x,y,z,seg){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,seg||16),mat); m.position.set(x,y,z); m.castShadow=true; g.add(m); return m; }
+  function legs4(g,w,d,h,inset,mat){ const s=inset||5; [[-w/2+s,-d/2+s],[w/2-s,-d/2+s],[-w/2+s,d/2-s],[w/2-s,d/2-s]].forEach(p=>bx(g,mat,4,h,4,p[0],h/2,p[1])); }
+  const legMat=new THREE.MeshStandardMaterial({ color:0x6b5136, roughness:.7 });
+  const whiteSoft=new THREE.MeshStandardMaterial({ color:0xf7f5f0, roughness:.9 });
+
+  function buildBed(f,g){
+    const w=f.w,d=f.d;
+    bx(g,fMat(f.color,.55),w,24,d,0,12,0);                       // フレーム
+    bx(g,whiteSoft,w-6,16,d-6,0,32,0);                           // マットレス
+    const single=w<=110;
+    const pilM=new THREE.MeshStandardMaterial({color:0xffffff,roughness:.95});
+    if(single) bx(g,pilM,w*0.55,7,32,0,44,-d/2+24);
+    else { bx(g,pilM,w*0.36,7,32,-w*0.22,44,-d/2+24); bx(g,pilM,w*0.36,7,32,w*0.22,44,-d/2+24); }
+    bx(g,fMat(f.color,1.05,.95),w-2,7,d*0.6,0,43,d*0.19);        // 掛け布団
+    bx(g,fMat(f.color,.5),w,26,5,0,45,-d/2+2.5);                 // ヘッドボード
+  }
+  function buildSofa(f,g){
+    const w=f.w,d=f.d, arm=Math.min(13,w*0.09);
+    bx(g,fMat(f.color,.8),w,22,d-8,0,15,2);                      // 座面下
+    const back=bx(g,fMat(f.color,.9),w,48,14,0,38,-d/2+7); back.rotation.x=-0.09;
+    bx(g,fMat(f.color,.72),arm,42,d,-w/2+arm/2,25,0);
+    bx(g,fMat(f.color,.72),arm,42,d,w/2-arm/2,25,0);
+    const n=w>170?3:2, cw=(w-arm*2-6)/n;
+    for(let i=0;i<n;i++) bx(g,fMat(f.color,1.06,.95),cw-4,10,d-22,-w/2+arm+3+cw*i+cw/2,31,4);
+    legs4(g,w,d,8,6,legMat);
+  }
+  function buildDesk(f,g){
+    const w=f.w,d=f.d;
+    bx(g,fMat(f.color,.95,.6),w,3.5,d,0,72,0);
+    legs4(g,w,d,70.5,4,fMat(f.color,.6));
+    bx(g,fMat(f.color,.75),w*0.3,12,d*0.7,w*0.3,64,0);           // 引き出し
+  }
+  function buildChairModel(color){
+    const g=new THREE.Group();
+    bx(g,fMat(color,.95),40,5,40,0,42,0);
+    const back=bx(g,fMat(color,.85),40,38,4,0,62,19); back.rotation.x=0.1;
+    legs4(g,40,40,40,4,fMat(color,.55));
+    return g;
+  }
+  function buildTable(f,g,topH){
+    const w=f.w,d=f.d,h=topH||70;
+    if(f.shape==="oval"){
+      const top=cyl(g,fMat(f.color,.95,.6),w/2,w/2,3.5,0,h,0,28); top.scale.z=d/w;
+      cyl(g,fMat(f.color,.6),5,7,h-2,0,(h-2)/2,0);
+      const base=cyl(g,fMat(f.color,.55),Math.min(w,d)*0.28,Math.min(w,d)*0.3,4,0,2,0,20); base.scale.z=1;
+    } else {
+      bx(g,fMat(f.color,.95,.6),w,3.5,d,0,h,0);
+      legs4(g,w,d,h-1.5,5,fMat(f.color,.6));
+    }
+  }
+  function buildTV(f,g){
+    const w=f.w,d=f.d;
+    bx(g,fMat(f.color,.85,.6),w,40,d,0,20,0);
+    bx(g,M.black,w*0.94,16,2,0,20,d/2-3);                         // 前面パネル
+    const sw=Math.min(w*0.85,150), shh=sw*0.55;
+    bx(g,M.black,sw,shh,4,0,44+shh/2,0);
+    const scr=bx(g,new THREE.MeshStandardMaterial({color:0x10151c,roughness:.15,metalness:.4}),sw-6,shh-6,1,0,44+shh/2,2.2);
+    bx(g,M.black,20,4,14,0,42,0);
+  }
+  function buildShelf(f,g){
+    const w=f.w,d=f.d,h=(d>55?95:178);
+    const mat=fMat(f.color,.9,.7), matD=fMat(f.color,.7);
+    bx(g,mat,3,h,d,-w/2+1.5,h/2,0); bx(g,mat,3,h,d,w/2-1.5,h/2,0);
+    bx(g,matD,w,h,2,0,h/2,-d/2+1);
+    const n=Math.max(2,Math.round(h/38));
+    for(let i=0;i<=n;i++) bx(g,mat,w-4,2.5,d-4,0,3+(h-6)*i/n,1);
+  }
+  function buildFridge(f,g){
+    const w=f.w,d=f.d,h=175;
+    const mat=new THREE.MeshStandardMaterial({ color:new THREE.Color(f.color||"#cfe8ff").multiplyScalar(1.02), roughness:.35, metalness:.25 });
+    bx(g,mat,w,h,d,0,h/2,0);
+    bx(g,M.steel,w-8,1.5,1,0,110,d/2+0.3);
+    bx(g,M.alum,3,50,3,-w/2+8,140,d/2+1.5); bx(g,M.alum,3,40,3,-w/2+8,75,d/2+1.5);
+  }
+  function buildWasher(f,g){
+    const w=f.w,d=f.d;
+    bx(g,M.whiteBody,w,92,d,0,46,0);
+    cyl(g,new THREE.MeshStandardMaterial({color:0x39424c,roughness:.3}),Math.min(w,d)*0.32,Math.min(w,d)*0.32,2,0,93,2,22);
+    bx(g,M.steel,w-10,6,8,0,90,-d/2+5);
+  }
+  function buildExtrude(f,g,h){
+    try{
+      const dstr=svgShapePath(f.shape||"rect", f.w, f.d, shapePxParams(f,1));
+      const paths=svgLoader.parse(`<svg xmlns="http://www.w3.org/2000/svg"><path d="${dstr}"/></svg>`).paths;
+      const shapes=[]; paths.forEach(p=>shapes.push(...SVGLoader.createShapes(p)));
+      const geo=new THREE.ExtrudeGeometry(shapes,{ depth:h, bevelEnabled:false });
+      geo.rotateX(Math.PI/2); geo.translate(-f.w/2,h,-f.d/2);
+      const m=new THREE.Mesh(geo,fMat(f.color,.95,.7)); m.castShadow=true; m.receiveShadow=true; g.add(m);
+    }catch(err){ console.error("押し出し形状エラー:",err); bx(g,fMat(f.color,.95),f.w,h,f.d,0,h/2,0); }
+  }
+  function typeOf(f){
+    const n=f.name||"";
+    if(/冷蔵庫/.test(n)) return "fridge";
+    if(/洗濯/.test(n)) return "washer";
+    if(/テレビ|TV/i.test(n)) return "tv";
+    if(/棚|収納|シェルフ|本棚|食器|タンス|箪笥|チェスト|ドレッサー/.test(n)) return "shelf";
+    if(/ベッド|寝具|布団/.test(n)) return "bed";
+    if(/ソファ/.test(n)) return "sofa";
+    if(/デスク|机/.test(n)) return "desk";
+    if(/こたつ|ローテーブル|座卓/.test(n)) return "lowtable";
+    if(/テーブル|ダイニング/.test(n)) return "table";
+    if(/丸椅子|スツール/.test(n)) return "stool";
+    if(/椅子|チェア/.test(n)) return "chair";
+    if(/壁|障害|柱/.test(n)) return "pillar";
+    return "generic";
+  }
+  const typeH={ fridge:175, washer:95, tv:44, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:0, generic:70 };
+  function build3DFurniture(f){
+    const g=new THREE.Group();
+    const type=typeOf(f);
+    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
+    if(useExtrude){ buildExtrude(f,g,typeH[type]||70); }
+    else switch(type){
+      case "fridge": buildFridge(f,g); break;
+      case "washer": buildWasher(f,g); break;
+      case "tv":     buildTV(f,g); break;
+      case "shelf":  buildShelf(f,g); break;
+      case "bed":    buildBed(f,g); break;
+      case "sofa":   buildSofa(f,g); break;
+      case "desk":   buildDesk(f,g); break;
+      case "lowtable": buildTable(f,g,38); break;
+      case "table":  buildTable(f,g,70); break;
+      case "stool":  { cyl(g,fMat(f.color,.95),f.w/2,f.w/2,6,0,42,0,20); cyl(g,fMat(f.color,.6),4,5,40,0,20,0); const b=cyl(g,fMat(f.color,.55),f.w*0.32,f.w*0.35,3,0,1.5,0,16); break; }
+      case "chair":  {
+        bx(g,fMat(f.color,.95),f.w*0.92,5,f.d*0.92,0,42,0);
+        const back=bx(g,fMat(f.color,.82),f.w*0.92,38,4,0,61,-f.d/2+4); back.rotation.x=-0.08;
+        legs4(g,f.w*0.92,f.d*0.92,40,4,fMat(f.color,.55));
+        break; }
+      case "pillar": bx(g,fMat(f.color,.9),f.w,ceilH,f.d,0,ceilH/2,0); break;
+      default:       bx(g,fMat(f.color,.95),f.w,70,f.d,0,35,0);
+    }
+    // 椅子スペース判定つきの机には椅子も置く
+    if(f.chair && type==="desk"){
+      const ch=buildChairModel("#d9d4c8");
+      const dir=f.chairDir||"front";
+      const off = dir==="front"? [0,f.d/2+26,0] : dir==="back"? [0,-f.d/2-26,Math.PI] : dir==="left"? [-f.w/2-26,0,-Math.PI/2] : [f.w/2+26,0,Math.PI/2];
+      ch.position.set(off[0],0,off[1]);
+      ch.rotation.y = dir==="front"? Math.PI : dir==="back"? 0 : dir==="left"? Math.PI/2 : -Math.PI/2;
+      g.add(ch);
+    }
+    g.position.set(f.xCm, floorLevelAt(f.xCm,f.yCm), f.yCm);
+    g.rotation.y = -(f.angle||0)*Math.PI/180;
+    return g;
+  }
+  function rebuildFurniture(){
+    while(furnGroup.children.length){
+      const c=furnGroup.children.pop();
+      c.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });
+      furnGroup.remove(c);
+    }
+    furnSegs=[];
+    furns.forEach(f=>{
+      try{ furnGroup.add(build3DFurniture(f)); }catch(err){ console.error("家具3D化エラー:",err,f); }
+      if(!isChairLike(f)){
+        const cs=corners(f.xCm,f.yCm,f.w,f.d,f.angle||0);
+        for(let i=0;i<4;i++){ const a=cs[i],b=cs[(i+1)%4]; furnSegs.push({x1:a.x,z1:a.y,x2:b.x,z2:b.y,half:0}); }
+      }
+    });
+  }
+
+  // --- 床の高さ（土間・バルコニーの段差） ---
+  function inRect(x,z,r){ return x>=C(r[0])&&x<=C(r[2])&&z>=C(r[1])&&z<=C(r[3]); }
+  function floorLevelAt(x,z){
+    if(inRect(x,z,[105,167,210,282])) return -8;      // 玄関
+    if(inRect(x,z,[917,167,1089,400])) return -2;     // 浴室
+    if(inRect(x,z,[390,875,1215,992])) return -10;    // バルコニー
+    if(inRect(x,z,[1096,160,1215,510])) return -12;   // ポーチ
+    if(z<=C(160)) return -12;                          // 共用廊下
+    return 0;
+  }
+
+  // --- 一人称操作 ---
+  const controls=new PointerLockControls(camera, canvas);
+  const keys={};
+  let topView=false, savedCam=null;
+  let fallbackLook=false;   // ポインターロックが使えない環境ではドラッグ視点に切り替える
+  function tryLock(){
+    try{ controls.lock(); }catch(e){}
+    setTimeout(()=>{
+      if(!controls.isLocked && view3dShown()){
+        fallbackLook=true;
+        document.getElementById("v3dResume").style.display="none";
+        document.getElementById("v3dHelp").textContent="ドラッグ: 見回す｜WASD/矢印: 移動｜E/クリック: ドア開閉｜Shift: 走る｜M: 上空から見る";
+      }
+    },400);
+  }
+  // ドラッグ視点（フォールバック）
+  let dragging=false, dragDist=0, lastX=0, lastY=0, yaw=0, pitch=0;
+  canvas.addEventListener("mousedown",e=>{
+    if(!view3dShown()||controls.isLocked||e.button!==0) return;
+    dragging=true; dragDist=0; lastX=e.clientX; lastY=e.clientY;
+    const eu=new THREE.Euler().setFromQuaternion(camera.quaternion,"YXZ");
+    yaw=eu.y; pitch=eu.x;
+  });
+  document.addEventListener("mousemove",e=>{
+    if(!dragging||!fallbackLook||topView) return;
+    const dx=e.clientX-lastX, dy=e.clientY-lastY;
+    dragDist+=Math.abs(dx)+Math.abs(dy);
+    lastX=e.clientX; lastY=e.clientY;
+    yaw-=dx*0.0042; pitch-=dy*0.0042;
+    pitch=Math.max(-1.45,Math.min(1.45,pitch));
+    camera.rotation.set(pitch,yaw,0,"YXZ");
+  });
+  document.addEventListener("mouseup",()=>{ dragging=false; });
+  canvas.addEventListener("click",e=>{
+    if(!view3dShown()||controls.isLocked) return;
+    if(fallbackLook){ if(dragDist<6&&promptDoor) promptDoor.toggle(); }
+  });
+  const BODY_R=20, WALK=250;
+  const pos={x:C(157),z:C(225)};       // スタートは玄関
+  let camY=eyeH-8;
+  camera.position.set(pos.x,camY,pos.z);
+  camera.rotation.y=-Math.PI/2;         // 東（廊下の方）を向く
+
+  function resetPlayer(){
+    pos.x=C(157); pos.z=C(225);
+    camY=eyeH+floorLevelAt(pos.x,pos.z);
+    camera.position.set(pos.x,camY,pos.z);
+    camera.rotation.set(0,-Math.PI/2,0);
+  }
+  function segPush(p,s){
+    const dx=s.x2-s.x1, dz=s.z2-s.z1;
+    const L2=dx*dx+dz*dz;
+    let t=L2? ((p.x-s.x1)*dx+(p.z-s.z1)*dz)/L2 : 0;
+    t=Math.max(0,Math.min(1,t));
+    const qx=s.x1+dx*t, qz=s.z1+dz*t;
+    let ddx=p.x-qx, ddz=p.z-qz;
+    let d=Math.hypot(ddx,ddz);
+    const min=s.half+BODY_R;
+    if(d<min){
+      if(d<0.001){ ddx=1;ddz=0;d=1; }
+      p.x+=ddx/d*(min-d); p.z+=ddz/d*(min-d);
+    }
+  }
+  function resolveCollision(p){
+    for(let it=0;it<3;it++){
+      for(const s of staticSegs) segPush(p,s);
+      for(const d of doorList) for(const s of d.colSegs()) segPush(p,s);
+      for(const s of furnSegs) segPush(p,s);
+    }
+  }
+
+  // ドアの注視判定
+  const raycaster=new THREE.Raycaster();
+  const centerVec=new THREE.Vector2(0,0);
+  let promptDoor=null, lastPrompt="";
+  function updatePrompt(){
+    promptDoor=null;
+    if((!controls.isLocked&&!fallbackLook)||topView){ setPrompt(""); return; }
+    raycaster.setFromCamera(centerVec,camera);
+    raycaster.far=190;
+    const hits=raycaster.intersectObjects(rayTargets,true);
+    for(const h of hits){
+      let o=h.object;
+      while(o&&!o.userData.door) o=o.parent;
+      if(o&&o.userData.door){ promptDoor=o.userData.door; break; }
+      if(h.object.userData.door){ promptDoor=h.object.userData.door; break; }
+    }
+    if(promptDoor) setPrompt(`${promptDoor.label}を${promptDoor.isOpen?"閉める":"開ける"}（E または クリック）`);
+    else setPrompt("");
+  }
+  function setPrompt(t){
+    if(t===lastPrompt) return; lastPrompt=t;
+    const el=document.getElementById("v3dPrompt");
+    el.style.display=t?"block":"none"; el.textContent=t;
+  }
+
+  // 上空ビュー（Mキー）：2D図面と同じ向きで見下ろす
+  function toggleTopView(){
+    topView=!topView;
+    scene.traverse(o=>{ if(o.userData&&o.userData.hideInTop) o.visible=!topView; });
+    if(topView){
+      savedCam={ pos:camera.position.clone(), quat:camera.quaternion.clone() };
+      controls.enabled=false;
+      camera.up.set(0,0,-1);
+      camera.position.set(C(623),1500,C(517));
+      camera.lookAt(C(623),0,C(517));
+    } else {
+      controls.enabled=true;
+      camera.up.set(0,1,0);
+      camera.position.copy(savedCam.pos);
+      camera.quaternion.copy(savedCam.quat);
+    }
+  }
+
+  // --- 入力 ---
+  function onKey(e,down){
+    if(!view3dShown()) return;
+    const k=e.code;
+    if(["KeyW","KeyA","KeyS","KeyD","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","ShiftLeft","ShiftRight","KeyE","KeyM","Space"].includes(k)) e.preventDefault();
+    keys[k]=down;
+    if(down&&k==="KeyE"&&promptDoor) promptDoor.toggle();
+    if(down&&k==="KeyM") toggleTopView();
+  }
+  document.addEventListener("keydown",e=>onKey(e,true));
+  document.addEventListener("keyup",e=>onKey(e,false));
+  document.addEventListener("mousedown",e=>{
+    if(!view3dShown()||!controls.isLocked||e.button!==0) return;
+    if(promptDoor) promptDoor.toggle();
+  });
+  canvas.addEventListener("click",()=>{ if(view3dShown()&&!controls.isLocked&&!fallbackLook) tryLock(); });
+  document.querySelector("#v3dResume .msg").addEventListener("click",tryLock);
+  controls.addEventListener("lock",()=>{ document.getElementById("v3dResume").style.display="none"; });
+  controls.addEventListener("unlock",()=>{ if(view3dShown()&&!closing&&!fallbackLook) document.getElementById("v3dResume").style.display="flex"; });
+
+  let closing=false;
+  document.getElementById("btn3DExit").onclick=()=>{ api.close(); };
+
+  // スライダー
+  let ceilTimer=null;
+  document.getElementById("v3dCeil").oninput=e=>{
+    ceilH=parseInt(e.target.value,10);
+    document.getElementById("v3dCeilVal").textContent=ceilH+"cm";
+    clearTimeout(ceilTimer); ceilTimer=setTimeout(buildStructure,120);
+  };
+  document.getElementById("v3dEye").oninput=e=>{
+    eyeH=parseInt(e.target.value,10);
+    document.getElementById("v3dEyeVal").textContent=eyeH+"cm";
+  };
+
+  // リサイズ
+  function resize(){
+    const w=view.clientWidth, h=view.clientHeight;
+    if(!w||!h) return;
+    renderer.setSize(w,h,false);
+    camera.aspect=w/h; camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(view);
+
+  // --- メインループ ---
+  const clock=new THREE.Clock();
+  function tick(){
+    const dt=Math.min(clock.getDelta(),0.05);
+    doorList.forEach(d=>d.update(dt));
+    if((controls.isLocked||fallbackLook)&&!topView){
+      let fx=0,fz=0;
+      const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
+      dir.y=0; if(dir.lengthSq()>0.0001) dir.normalize();
+      const right={x:-dir.z,z:dir.x};
+      if(keys.KeyW||keys.ArrowUp){ fx+=dir.x; fz+=dir.z; }
+      if(keys.KeyS||keys.ArrowDown){ fx-=dir.x; fz-=dir.z; }
+      if(keys.KeyD||keys.ArrowRight){ fx+=right.x; fz+=right.z; }
+      if(keys.KeyA||keys.ArrowLeft){ fx-=right.x; fz-=right.z; }
+      const len=Math.hypot(fx,fz);
+      if(len>0.001){
+        const sp=WALK*((keys.ShiftLeft||keys.ShiftRight)?1.9:1);
+        const step=sp*dt;
+        const n=Math.max(1,Math.ceil(step/10));   // 大きな1歩は分割して壁抜けを防ぐ
+        for(let i=0;i<n;i++){
+          pos.x+=fx/len*step/n; pos.z+=fz/len*step/n;
+          resolveCollision(pos);
+        }
+      }
+      const targetY=eyeH+floorLevelAt(pos.x,pos.z);
+      camY+=(targetY-camY)*Math.min(1,dt*10);
+      camera.position.set(pos.x,camY,pos.z);
+    }
+    updatePrompt();
+    renderer.render(scene,camera);
+  }
+
+  // --- 初期構築 ---
+  buildStructure();
+  buildOpeningTrims();
+  buildFixtures();
+
+  const api={
+    _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, step(dt){ doorList.forEach(d=>d.update(dt)); }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
+    open(){
+      closing=false;
+      rebuildFurniture();
+      resetPlayer();
+      resize();
+      renderer.setAnimationLoop(tick);
+      document.getElementById("v3dResume").style.display=fallbackLook?"none":"flex";
+    },
+    close(){
+      closing=true;
+      try{ controls.unlock(); }catch(e){}
+      renderer.setAnimationLoop(null);
+      document.getElementById("view3d").classList.remove("show");
+      document.getElementById("v3dResume").style.display="none";
+      setPrompt("");
+    },
+  };
+  return api;
+}
 
 // ===== リアルタイム共有（Firebase Realtime Database）=====
 var fbDb=null, fbRoomRef=null, fbReady=false, gotFirst=false;
