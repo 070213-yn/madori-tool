@@ -1972,7 +1972,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     alum:      new THREE.MeshStandardMaterial({ color:0xd9dde0, roughness:.4, metalness:.4 }),
     glass:     new THREE.MeshStandardMaterial({ color:0xcfe6ff, roughness:.06, metalness:.25, transparent:true, opacity:.22, side:THREE.DoubleSide }),
     frosted:   new THREE.MeshStandardMaterial({ color:0xffffff, roughness:.6, transparent:true, opacity:.55, side:THREE.DoubleSide }),
-    shoji:     new THREE.MeshStandardMaterial({ color:0xf3eee2, roughness:.95 }),   // 引き戸の面材（透けない）
+    shoji:     new THREE.MeshStandardMaterial({ color:0xf3f1ec, roughness:.95 }),   // 引き戸の面材（透けない）
+    shojiFrame:new THREE.MeshStandardMaterial({ color:0xe6e3dc, roughness:.7 }),    // 引き戸の框も白
     whiteBody: new THREE.MeshStandardMaterial({ color:0xf6f6f4, roughness:.5 }),
     steel:     new THREE.MeshStandardMaterial({ color:0x9aa2a8, roughness:.35, metalness:.7 }),
     black:     new THREE.MeshStandardMaterial({ color:0x24262a, roughness:.5 }),
@@ -2295,7 +2296,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   // 引き戸パネル（木枠＋不透明な面材）。handle=true で引手を付ける
   function makeShoji(w,h,handle){
     const g=new THREE.Group();
-    const fr=M.doorFrame;
+    const fr=M.shojiFrame;   // 引き戸は框まで白
     const t=3.4;
     // 上下の框
     [[w/2,h-3,w,6],[w/2,3,w,6]].forEach(p=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(p[2],p[3],t),fr); m.position.set(p[0],p[1],0); m.castShadow=true; m.userData.isDoor=true; g.add(m); });
@@ -2461,7 +2462,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
         const A = wi.horiz? {x:wi.sx+o.s0, z:wi.az} : {x:wi.ax, z:wi.sz+o.s0};
         const wcm=o.s1-o.s0, h=o.h, sill=o.sill||0;
         const isWin=(o.op.kind==="window"||o.op.kind==="slideglass"||o.op.style==="window");
-        const fm=isWin? M.alum : M.doorFrame;
+        const fm=isWin? M.alum : (o.op.kind==="slidewood"? M.shojiFrame : M.doorFrame);   // 引き戸まわりの枠も白
         const ft=wi.t+3, fw=4;
         function bar(px,pz,py,len,vertical,along){
           let g;
