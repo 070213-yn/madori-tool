@@ -416,6 +416,8 @@ const PRESETS = [
   { key:"shelf",  name:"棚/収納", w:80, d:40, color:"#d4b89a" },
   { key:"fridge", name:"冷蔵庫", w:60, d:65, color:"#cfe8ff" },
   { key:"washer", name:"洗濯機", w:60, d:60, color:"#cfe8ff" },
+  { key:"plant",  name:"観葉植物", w:40, d:40, color:"#5ba05e", shape:"oval", hCm:130 },
+  { key:"plant_s",name:"観葉植物(小)", w:25, d:25, color:"#6bb06a", shape:"oval", hCm:55 },
   { key:"wall",   name:"障害物/壁", w:50, d:50, color:"#9aa0a6" },
 ];
 
@@ -423,6 +425,7 @@ const PRESETS = [
 // 家具の名前から種類を判定する（家具データは種類キーを持たないため名前で見分ける）
 function typeOf(f){
   const n=f.name||"";
+  if(/観葉|植物|グリーン|鉢植|パキラ|ウンベラータ|モンステラ|サンスベリア|ガジュマル/.test(n)) return "plant";
   if(/冷蔵庫/.test(n)) return "fridge";
   if(/洗濯/.test(n)) return "washer";
   if(/テレビ|TV/i.test(n)) return "tv";
@@ -437,7 +440,7 @@ function typeOf(f){
   if(/壁|障害|柱/.test(n)) return "pillar";
   return "generic";
 }
-const typeH={ fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
+const typeH={ plant:130, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
 // 高さを指定していないときの既定の高さ
 function defaultHeight(f,type){
   type=type||typeOf(f);
@@ -445,7 +448,7 @@ function defaultHeight(f,type){
   return typeH[type]||70;
 }
 // 高さを自由に設定できる種類（ベッド・ソファ・椅子は形が複雑なので対象外）
-const HEIGHT_ADJUSTABLE=new Set(["shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
+const HEIGHT_ADJUSTABLE=new Set(["plant","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
 function canSetHeight(f){
   const t=typeOf(f);
   if(HEIGHT_ADJUSTABLE.has(t)) return true;
@@ -2095,6 +2098,103 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     cyl(g,new THREE.MeshStandardMaterial({color:0x39424c,roughness:.3}),Math.min(w,d)*0.32,Math.min(w,d)*0.32,2,0,h-2,2,22);
     bx(g,M.steel,w-10,6,8,0,h-5,-d/2+5);
   }
+  // ===== 観葉植物（幹から枝を再帰的に伸ばして葉を付ける）=====
+  // 同じ家具は毎回同じ形になるよう、idから決まる疑似乱数を使う
+  function makeRand(seed){ let s=(seed|0)||1; return ()=>{ s=(s*1103515245+12345)&0x7fffffff; return s/0x7fffffff; }; }
+  // 葉の原型：細長い板。根元が原点で +z 方向へ伸びる
+  const _leafBase=new THREE.SphereGeometry(1,6,4);
+  _leafBase.scale(0.33,0.075,1.0); _leafBase.translate(0,0,1);
+  const PLANT_M={
+    pot:    new THREE.MeshStandardMaterial({ color:0xe3ddd1, roughness:.65 }),
+    potRim: new THREE.MeshStandardMaterial({ color:0xd2cabb, roughness:.6 }),
+    soil:   new THREE.MeshStandardMaterial({ color:0x3d3228, roughness:1 }),
+    wood:   new THREE.MeshStandardMaterial({ color:0x6b5238, roughness:.9 }),
+  };
+  function buildPlant(f,g,H){
+    const h=Math.max(30,H||130), base=Math.min(f.w,f.d);
+    const rnd=makeRand(((f.id||1)*7919+Math.round(f.w*3+f.d))|0);
+    // 鉢（下すぼまりの陶器）＋縁＋土
+    const potR=base*0.34, potH=Math.min(h*0.30, potR*2.3);
+    cyl(g,PLANT_M.pot,potR,potR*0.68,potH,0,potH/2,0,22);
+    cyl(g,PLANT_M.potRim,potR*1.07,potR*1.04,potH*0.11,0,potH*0.95,0,22);
+    cyl(g,PLANT_M.soil,potR*0.9,potR*0.9,2.5,0,potH-1.2,0,20);
+
+    const woodGeos=[], leafA=[], leafB=[];
+    const UP=new THREE.Vector3(0,1,0), FZ=new THREE.Vector3(0,0,1);
+    const q=new THREE.Quaternion();
+    let leafToggle=0;
+    function addLeaf(pos,dir,size){
+      const gg=_leafBase.clone();
+      gg.scale(size,size,size);
+      q.setFromUnitVectors(FZ,dir.clone().normalize());
+      gg.applyQuaternion(q);
+      gg.translate(pos.x,pos.y,pos.z);
+      (leafToggle++%2? leafB:leafA).push(gg);
+    }
+    function grow(from,dir,len,rad,depth){
+      const gg=new THREE.CylinderGeometry(rad*0.66,rad,len,6,1);
+      gg.translate(0,len/2,0);
+      q.setFromUnitVectors(UP,dir.clone().normalize());
+      gg.applyQuaternion(q);
+      gg.translate(from.x,from.y,from.z);
+      woodGeos.push(gg);
+      const to=from.clone().addScaledVector(dir,len);
+      if(depth<=0){
+        // 枝先に葉を放射状に。少し垂れ下がる葉も混ぜて自然に見せる
+        const n=5+Math.floor(rnd()*3);
+        for(let i=0;i<n;i++){
+          const a=(i/n)*Math.PI*2+rnd()*0.8;
+          const ld=dir.clone().multiplyScalar(0.7)
+            .add(new THREE.Vector3(Math.cos(a), -0.22+rnd()*0.65, Math.sin(a)).multiplyScalar(0.9));
+          addLeaf(to.clone().addScaledVector(dir,-len*0.35*rnd()), ld, len*0.62+base*0.06);
+        }
+        return;
+      }
+      const n=2+(rnd()<0.55?1:0);
+      for(let i=0;i<n;i++){
+        const a=(i/n)*Math.PI*2+rnd()*1.3;
+        const spread=0.34+rnd()*0.34;
+        const nd=dir.clone().multiplyScalar(1.45)   // 親の向きを強めに引き継いで、横に広がりすぎないようにする
+          .add(new THREE.Vector3(Math.cos(a)*spread, rnd()*0.1, Math.sin(a)*spread)).normalize();
+        grow(to,nd,len*(0.62+rnd()*0.14),rad*0.66,depth-1);
+      }
+      if(depth<=2){   // 枝の途中にも葉を付けて、下のほうまで葉が茂って見えるようにする
+        const m=depth===1?3:2;
+        for(let i=0;i<m;i++){
+          const a=rnd()*Math.PI*2;
+          const ld=dir.clone().multiplyScalar(0.45).add(new THREE.Vector3(Math.cos(a),0.05+rnd()*0.45,Math.sin(a)));
+          addLeaf(from.clone().addScaledVector(dir,len*(0.35+rnd()*0.5)), ld, len*0.42+base*0.05);
+        }
+      }
+    }
+    // 幹はやや低めから枝分かれさせる（樹木ではなく鉢植えらしい姿にする）
+    const trunkLen=(h-potH)*0.34, trunkRad=Math.max(1.0, base*0.045);
+    const lean=new THREE.Vector3((rnd()-0.5)*0.14, 1, (rnd()-0.5)*0.14).normalize();
+    grow(new THREE.Vector3(0,0,0), lean, trunkLen, trunkRad, 3);
+
+    const cA=new THREE.Color(f.color||"#5ba05e");
+    const cB=cA.clone().multiplyScalar(0.72);
+    const plant=new THREE.Group();
+    function addMerged(list,mat){
+      if(!list.length) return;
+      const m=new THREE.Mesh(BGU.mergeGeometries(list), mat);
+      m.castShadow=true; plant.add(m); list.forEach(x=>x.dispose());
+    }
+    addMerged(woodGeos,PLANT_M.wood);
+    addMerged(leafA,new THREE.MeshStandardMaterial({ color:cA, roughness:.72, side:THREE.DoubleSide }));
+    addMerged(leafB,new THREE.MeshStandardMaterial({ color:cB, roughness:.72, side:THREE.DoubleSide }));
+
+    // 枝ぶりは乱数で変わるので、出来上がりを指定した高さ・幅に収める
+    const bb=new THREE.Box3().setFromObject(plant);
+    const curH=Math.max(1,bb.max.y);
+    const sY=(h-(potH-2))/curH;
+    const curW=Math.max(Math.abs(bb.min.x),Math.abs(bb.max.x),Math.abs(bb.min.z),Math.abs(bb.max.z))*sY;
+    const maxW=base*0.95;
+    const sXZ=(curW>maxW)? sY*(maxW/curW) : sY;
+    plant.scale.set(sXZ,sY,sXZ);
+    plant.position.y=potH-2;
+    g.add(plant);
+  }
   function buildExtrude(f,g,h){
     try{
       const dstr=svgShapePath(f.shape||"rect", f.w, f.d, shapePxParams(f,1));
@@ -2109,9 +2209,10 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const g=new THREE.Group();
     const type=typeOf(f);
     const H=heightOf(f,type);   // ユーザーが指定した高さ（未指定なら種類ごとの既定値）
-    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
+    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && type!=="plant" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
     if(useExtrude){ buildExtrude(f,g,H); }
     else switch(type){
+      case "plant":  buildPlant(f,g,H); break;
       case "fridge": buildFridge(f,g,H); break;
       case "washer": buildWasher(f,g,H); break;
       case "tv":     buildTV(f,g,H); break;
@@ -2452,7 +2553,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   buildOpeningTrims();
 
   const api={
-    _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, step(dt){ doorList.forEach(d=>d.update(dt)); }, frame(dt){ tick(dt); }, look(){ scene.updateMatrixWorld(true); updatePrompt(); return { door:promptDoor&&promptDoor.label, sit:promptSit&&promptSit.userData.sit.name, text:lastPrompt }; }, act(){ interact(); }, get sitting(){ return sitting; }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
+    _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, get furnGroup(){return furnGroup;}, step(dt){ doorList.forEach(d=>d.update(dt)); }, frame(dt){ tick(dt); }, look(){ scene.updateMatrixWorld(true); updatePrompt(); return { door:promptDoor&&promptDoor.label, sit:promptSit&&promptSit.userData.sit.name, text:lastPrompt }; }, act(){ interact(); }, get sitting(){ return sitting; }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
     open(){
       closing=false;
       rebuildFurniture();
