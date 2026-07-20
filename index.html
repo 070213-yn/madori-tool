@@ -284,6 +284,7 @@
       <div class="row" id="pCornerRow"><label>角の丸み</label><input type="number" id="pCorner" step="1" min="0"><span class="hint" style="margin:0;">cm</span></div>
       <div class="row" id="pBaseRow"><label>置く高さ</label><input type="number" id="pBase" step="5" min="0"><span class="hint" style="margin:0;">cm（棚・机の上に置くとき）</span></div>
       <div class="row"><label>色</label><input type="color" id="pColor"></div>
+      <div class="row"><label>つや</label><input type="range" id="pGloss" min="0" max="100" step="5"><span class="hint" style="margin:0;" id="pGlossVal">-</span></div>
       <div class="row" id="pCushRow"><label>クッション</label>
         <input type="color" id="pCush0" title="左・奥"><input type="color" id="pCush1" title="左・手前"><input type="color" id="pCush2" title="右">
         <span class="hint" style="margin:0;">左2つ / 右1つ</span>
@@ -555,6 +556,15 @@ function canSetHeight(f){
   return !!(f.shape && f.shape!=="rect" && f.shape!=="round" && t!=="table" && t!=="stool");
 }
 function heightOf(f,type){ return (f.hCm>0? f.hCm : defaultHeight(f,type)); }
+// つや（0=完全につや消し、100=つやつや）。未設定のときの目安を種類ごとに持つ
+function defaultGloss(type){
+  if(type==="rug") return 0;
+  if(type==="marbletable") return 85;
+  if(type==="frame"||type==="printer"||type==="printer3d"||type==="pctower") return 45;
+  if(type==="fridge"||type==="washer") return 55;
+  return 20;
+}
+function glossOf(f){ return (f.rough!=null)? Math.round((1-f.rough)*100) : defaultGloss(typeOf(f)); }
 // ソファのクッション色（右に1つ・左に2つ）。未設定なら本体色から作る
 function cushionColors(f){
   const c=(f.cushions&&f.cushions.length===3)? f.cushions.slice() : [null,null,null];
@@ -1075,6 +1085,9 @@ function fillPropPanel(f){
   if(canH) document.getElementById("pH").value=Math.round(heightOf(f));
   document.getElementById("pAngle").textContent=(f.angle||0)+"°";
   document.getElementById("pColor").value=rgbToHex(f.color);
+  const gl=glossOf(f);
+  document.getElementById("pGloss").value=gl;
+  document.getElementById("pGlossVal").textContent=(f.rough!=null? gl : gl+"（標準）");
   // 形と角の丸み
   const sh=f.shape||"rect";
   document.getElementById("pShape").value=sh;
@@ -1184,6 +1197,11 @@ document.getElementById("pW").oninput=e=>applySize("w",Math.max(1,parseFloat(e.t
 document.getElementById("pD").oninput=e=>applySize("d",Math.max(1,parseFloat(e.target.value)||1));
 document.getElementById("pH").oninput=e=>applySize("h",Math.max(1,parseFloat(e.target.value)||1));
 document.getElementById("pColor").oninput=e=>applyEdit(f=>f.color=e.target.value,false);
+document.getElementById("pGloss").oninput=e=>{
+  const v=Math.max(0,Math.min(100,parseInt(e.target.value,10)||0));
+  document.getElementById("pGlossVal").textContent=v;
+  applyEdit(f=>f.rough=1-v/100,false);
+};
 document.getElementById("pBase").oninput=e=>applyEdit(f=>f.baseY=Math.max(0,parseFloat(e.target.value)||0),false);
 document.getElementById("pShape").onchange=e=>{
   applyEdit(f=>{ f.shape=e.target.value; if(!f.cornerR) f.cornerR=Math.round(Math.min(f.w,f.d)*0.15); },true);
@@ -2043,6 +2061,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     }
     _floorMats[key]=m; return m;
   }
+  // 建物側で使い回している材質には印を付ける（家具ごとの「つや」変更で巻き添えにしないため）
+  Object.keys(M).forEach(k=>{ if(M[k]&&M[k].isMaterial) M[k].__shared=true; });
   // 壁・ドアの色を内装設定から反映する（材質の色を変えるだけなので作り直し不要）
   function applyDecorMaterials(){
     const w=new THREE.Color(decor.wall||"#f3f0ea");
@@ -2706,8 +2726,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   function bx(g,mat,w,h,d,x,y,z){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat); m.position.set(x,y,z); m.castShadow=true; m.receiveShadow=true; g.add(m); return m; }
   function cyl(g,mat,r1,r2,h,x,y,z,seg){ const m=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,h,seg||16),mat); m.position.set(x,y,z); m.castShadow=true; g.add(m); return m; }
   function legs4(g,w,d,h,inset,mat){ const s=inset||5; [[-w/2+s,-d/2+s],[w/2-s,-d/2+s],[-w/2+s,d/2-s],[w/2-s,d/2-s]].forEach(p=>bx(g,mat,4,h,4,p[0],h/2,p[1])); }
-  const legMat=new THREE.MeshStandardMaterial({ color:0x6b5136, roughness:.7 });
-  const whiteSoft=new THREE.MeshStandardMaterial({ color:0xf7f5f0, roughness:.9 });
+  const legMat=new THREE.MeshStandardMaterial({ color:0x6b5136, roughness:.7 }); legMat.__shared=true;
+  const whiteSoft=new THREE.MeshStandardMaterial({ color:0xf7f5f0, roughness:.9 }); whiteSoft.__shared=true;
 
   function buildBed(f,g){
     const w=f.w,d=f.d;
@@ -2937,6 +2957,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   });
   kbTex.repeat.set(1,1);
   MON_M.keyTop=new THREE.MeshStandardMaterial({ map:kbTex, roughness:.7 });
+  Object.keys(MON_M).forEach(k=>{ if(MON_M[k]&&MON_M[k].isMaterial) MON_M[k].__shared=true; });
   function buildMonitorArm(g,w,d,h,n){
     if(!n) return;
     const A=MON_M.arm, pz=-d/2+5;
@@ -3046,6 +3067,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     soil:   new THREE.MeshStandardMaterial({ color:0x3d3228, roughness:1 }),
     wood:   new THREE.MeshStandardMaterial({ color:0x6b5238, roughness:.9 }),
   };
+  Object.keys(PLANT_M).forEach(k=>{ if(PLANT_M[k]&&PLANT_M[k].isMaterial) PLANT_M[k].__shared=true; });
   function buildPlant(f,g,H){
     const h=Math.max(30,H||130), base=Math.min(f.w,f.d);
     const rnd=makeRand(((f.id||1)*7919+Math.round(f.w*3+f.d))|0);
@@ -3184,6 +3206,18 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       ch.rotation.y = dir==="front"? Math.PI : dir==="back"? 0 : dir==="left"? Math.PI/2 : -Math.PI/2;
       g.add(ch);
     }
+    // つや（反射）の指定があれば、この家具だけの材質に反映する
+    if(f.rough!=null){
+      const r=Math.max(0,Math.min(1,f.rough));
+      g.traverse(o=>{
+        const mats=Array.isArray(o.material)?o.material:(o.material?[o.material]:[]);
+        mats.forEach(m=>{
+          if(!m||m.__shared||m.roughness===undefined) return;
+          m.roughness=r;
+          if(r>0.8) m.metalness=Math.min(m.metalness||0,0.04);   // マットにするときは金属感も消す
+        });
+      });
+    }
     g.position.set(f.xCm, floorLevelAt(f.xCm,f.yCm)+(f.baseY||0), f.yCm);   // 置く高さ（棚・机の上）
     g.rotation.y = -(f.angle||0)*Math.PI/180;
     const st=sitSpecFor(f,type); if(st) g.userData.sit=st;   // 座れる家具の座り位置
@@ -3204,7 +3238,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   function furnSig(f){
     return [f.name,f.w,f.d,f.color,f.shape,f.cornerR,f.semiDir,f.semiStraight,f.lcorner,f.lw,f.ld,
             f.hCm||0,f.chair?1:0,f.chairDir,(f.cushions||[]).join(","),f.pic||"",
-            f.monitors!=null?f.monitors:2, f.kbMouse!==false?1:0].join("|");
+            f.monitors!=null?f.monitors:2, f.kbMouse!==false?1:0, f.rough!=null?f.rough:""].join("|");
   }
   function disposeNode(node){
     furnGroup.remove(node.group);
