@@ -236,6 +236,7 @@
       <div class="row"><label>名前</label><input type="text" id="pName"></div>
       <div class="row"><label>幅 W(cm)</label><input type="number" id="pW" step="1"></div>
       <div class="row"><label>奥行 D(cm)</label><input type="number" id="pD" step="1"></div>
+      <div class="row" id="pHRow"><label>高さ H(cm)</label><input type="number" id="pH" step="5" min="5"><span class="hint" style="margin:0;">3Dでの高さ</span></div>
       <div class="row">
         <label>角度</label>
         <button class="sub" id="pRotL">⟲ 左90°</button>
@@ -345,6 +346,7 @@
     <div class="row"><label>名前</label><input type="text" id="fmName" placeholder="例: L字デスク"></div>
     <div class="row"><label>幅 W(cm)</label><input type="number" id="fmW" value="120" step="1"></div>
     <div class="row"><label>奥行 D(cm)</label><input type="number" id="fmD" value="60" step="1"></div>
+    <div class="row"><label>高さ H(cm)</label><input type="number" id="fmH" value="0" step="5" min="0"><span class="hint" style="margin:0;">0で自動（3Dでの高さ）</span></div>
     <div class="row"><label>色</label><input type="color" id="fmColor" value="#a8e6cf"></div>
     <div class="row"><label>形</label>
       <select id="fmShape" style="flex:1;">
@@ -416,6 +418,41 @@ const PRESETS = [
   { key:"washer", name:"洗濯機", w:60, d:60, color:"#cfe8ff" },
   { key:"wall",   name:"障害物/壁", w:50, d:50, color:"#9aa0a6" },
 ];
+
+// ===== 家具の種類判定と高さ（2Dの高さ入力と3Dモデルで共用）=====
+// 家具の名前から種類を判定する（家具データは種類キーを持たないため名前で見分ける）
+function typeOf(f){
+  const n=f.name||"";
+  if(/冷蔵庫/.test(n)) return "fridge";
+  if(/洗濯/.test(n)) return "washer";
+  if(/テレビ|TV/i.test(n)) return "tv";
+  if(/棚|収納|シェルフ|本棚|食器|タンス|箪笥|チェスト|ドレッサー/.test(n)) return "shelf";
+  if(/ベッド|寝具|布団/.test(n)) return "bed";
+  if(/ソファ/.test(n)) return "sofa";
+  if(/デスク|机/.test(n)) return "desk";
+  if(/こたつ|ローテーブル|座卓/.test(n)) return "lowtable";
+  if(/テーブル|ダイニング/.test(n)) return "table";
+  if(/丸椅子|スツール/.test(n)) return "stool";
+  if(/椅子|チェア/.test(n)) return "chair";
+  if(/壁|障害|柱/.test(n)) return "pillar";
+  return "generic";
+}
+const typeH={ fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
+// 高さを指定していないときの既定の高さ
+function defaultHeight(f,type){
+  type=type||typeOf(f);
+  if(type==="shelf") return (f.d>55?95:178);   // 奥行が深い棚は低め（カウンター収納）
+  return typeH[type]||70;
+}
+// 高さを自由に設定できる種類（ベッド・ソファ・椅子は形が複雑なので対象外）
+const HEIGHT_ADJUSTABLE=new Set(["shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
+function canSetHeight(f){
+  const t=typeOf(f);
+  if(HEIGHT_ADJUSTABLE.has(t)) return true;
+  // L字・半円などの押し出し形状はどの種類でも高さが効く
+  return !!(f.shape && f.shape!=="rect" && f.shape!=="round" && t!=="table" && t!=="stool");
+}
+function heightOf(f,type){ return (f.hCm>0? f.hCm : defaultHeight(f,type)); }
 
 // 倍率: 画像1pxが何cmか。洋室6.1の左壁(赤点間)=360cm → 約450px なので 0.80 で固定
 const FIXED_SCALE = 0.80;
@@ -682,7 +719,7 @@ document.getElementById("btnAdd").onclick=()=>{
 function furnFromType(p, xCm, yCm){
   return { name:p.name, w:p.w, d:p.d, angle:0, color:p.color, xCm, yCm,
     shape:p.shape||"rect", cornerR:p.cornerR||0, semiDir:p.semiDir||"bottom", semiStraight:p.semiStraight||0,
-    lcorner:p.lcorner||"tr", lw:p.lw||0, ld:p.ld||0,
+    lcorner:p.lcorner||"tr", lw:p.lw||0, ld:p.ld||0, hCm:p.hCm||0,
     chair:!!p.chair, chairDir:"front", chairDepth:70 };
 }
 
@@ -778,6 +815,10 @@ function fillPropPanel(f){
   box.style.display="block";
   document.getElementById("pName").value=f.name;
   document.getElementById("pW").value=f.w; document.getElementById("pD").value=f.d;
+  // 高さ（3D用）。形が複雑なベッド・ソファ・椅子は非表示
+  const canH=canSetHeight(f);
+  document.getElementById("pHRow").style.display=canH?"flex":"none";
+  if(canH) document.getElementById("pH").value=Math.round(heightOf(f));
   document.getElementById("pAngle").textContent=(f.angle||0)+"°";
   document.getElementById("pColor").value=rgbToHex(f.color);
   document.getElementById("pChair").checked=!!f.chair;
@@ -810,6 +851,7 @@ function applyEdit(mut, full){
 document.getElementById("pName").oninput=e=>applyEdit(f=>f.name=e.target.value,false);
 document.getElementById("pW").oninput=e=>applyEdit(f=>f.w=parseFloat(e.target.value)||1,true);
 document.getElementById("pD").oninput=e=>applyEdit(f=>f.d=parseFloat(e.target.value)||1,true);
+document.getElementById("pH").oninput=e=>applyEdit(f=>f.hCm=Math.max(0,parseFloat(e.target.value)||0),false);
 document.getElementById("pColor").oninput=e=>applyEdit(f=>f.color=e.target.value,false);
 document.getElementById("pRotL").onclick=()=>{ applyEdit(f=>f.angle=((f.angle||0)+270)%360,true); document.getElementById("pAngle").textContent=(ctxSelFurn()?.angle||0)+"°"; };
 document.getElementById("pRotR").onclick=()=>{ applyEdit(f=>f.angle=((f.angle||0)+90)%360,true); document.getElementById("pAngle").textContent=(ctxSelFurn()?.angle||0)+"°"; };
@@ -1181,6 +1223,7 @@ function fmReadForm(){
     name: document.getElementById("fmName").value.trim()||"家具",
     w: Math.max(1, parseFloat(document.getElementById("fmW").value)||60),
     d: Math.max(1, parseFloat(document.getElementById("fmD").value)||60),
+    hCm: Math.max(0, parseFloat(document.getElementById("fmH").value)||0),
     color: document.getElementById("fmColor").value,
     shape: document.getElementById("fmShape").value,
     cornerR: parseFloat(document.getElementById("fmCorner").value)||0,
@@ -1196,10 +1239,11 @@ function fmPreview(){ drawFurnPreview(document.getElementById("fmPreview"), fmRe
 function openFurnModal(preset){
   fmEditingKey=preset?preset.key:null;
   document.getElementById("fmTitle").textContent=preset?"家具の種類を編集":"家具の種類を作る";
-  const p=preset||{ name:"", w:120, d:60, color:"#a8e6cf", shape:"rect", cornerR:14, semiDir:"bottom", semiStraight:0, lcorner:"tr", lw:60, ld:30, chair:false };
+  const p=preset||{ name:"", w:120, d:60, hCm:0, color:"#a8e6cf", shape:"rect", cornerR:14, semiDir:"bottom", semiStraight:0, lcorner:"tr", lw:60, ld:30, chair:false };
   document.getElementById("fmName").value=p.name||"";
   document.getElementById("fmW").value=p.w||120;
   document.getElementById("fmD").value=p.d||60;
+  document.getElementById("fmH").value=(p.hCm!=null?p.hCm:0);
   document.getElementById("fmColor").value=p.color||"#a8e6cf";
   document.getElementById("fmShape").value=p.shape||"rect";
   document.getElementById("fmCorner").value=(p.cornerR!=null?p.cornerR:14);
@@ -1216,7 +1260,7 @@ function openFurnModal(preset){
 function closeFurnModal(){ document.getElementById("furnModal").classList.remove("show"); }
 document.getElementById("btnNewFurn").onclick=()=>openFurnModal(null);
 document.getElementById("fmShape").onchange=fmShapeUI;
-["fmName","fmW","fmD","fmColor","fmCorner","fmSemiDir","fmSemiStraight","fmLcorner","fmLw","fmLd"].forEach(id=>{
+["fmName","fmW","fmD","fmH","fmColor","fmCorner","fmSemiDir","fmSemiStraight","fmLcorner","fmLw","fmLd"].forEach(id=>{
   const el=document.getElementById(id); el.addEventListener("input",fmPreview); el.addEventListener("change",fmPreview);
 });
 document.getElementById("fmChair").addEventListener("change",fmPreview);
@@ -1995,11 +2039,11 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     for(let i=0;i<n;i++) bx(g,fMat(f.color,1.06,.95),cw-4,10,d-22,-w/2+arm+3+cw*i+cw/2,31,4);
     legs4(g,w,d,8,6,legMat);
   }
-  function buildDesk(f,g){
-    const w=f.w,d=f.d;
-    bx(g,fMat(f.color,.95,.6),w,3.5,d,0,72,0);
-    legs4(g,w,d,70.5,4,fMat(f.color,.6));
-    bx(g,fMat(f.color,.75),w*0.3,12,d*0.7,w*0.3,64,0);           // 引き出し
+  function buildDesk(f,g,H){
+    const w=f.w,d=f.d,h=Math.max(20,H||72);
+    bx(g,fMat(f.color,.95,.6),w,3.5,d,0,h,0);
+    legs4(g,w,d,h-1.5,4,fMat(f.color,.6));
+    bx(g,fMat(f.color,.75),w*0.3,12,d*0.7,w*0.3,h-8,0);          // 引き出し
   }
   // 椅子（他の家具と同じく +z 側が正面＝座る人が向く向き）
   function buildChairModel(color){
@@ -2021,35 +2065,35 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       legs4(g,w,d,h-1.5,5,fMat(f.color,.6));
     }
   }
-  function buildTV(f,g){
-    const w=f.w,d=f.d;
-    bx(g,fMat(f.color,.85,.6),w,40,d,0,20,0);
-    bx(g,M.black,w*0.94,16,2,0,20,d/2-3);                         // 前面パネル
+  function buildTV(f,g,H){
+    const w=f.w,d=f.d,h=Math.max(15,H||40);
+    bx(g,fMat(f.color,.85,.6),w,h,d,0,h/2,0);
+    bx(g,M.black,w*0.94,Math.min(16,h*0.42),2,0,h/2,d/2-3);       // 前面パネル
     const sw=Math.min(w*0.85,150), shh=sw*0.55;
-    bx(g,M.black,sw,shh,4,0,44+shh/2,0);
-    const scr=bx(g,new THREE.MeshStandardMaterial({color:0x10151c,roughness:.15,metalness:.4}),sw-6,shh-6,1,0,44+shh/2,2.2);
-    bx(g,M.black,20,4,14,0,42,0);
+    bx(g,M.black,sw,shh,4,0,h+4+shh/2,0);
+    const scr=bx(g,new THREE.MeshStandardMaterial({color:0x10151c,roughness:.15,metalness:.4}),sw-6,shh-6,1,0,h+4+shh/2,2.2);
+    bx(g,M.black,20,4,14,0,h+2,0);                                // テレビの脚
   }
-  function buildShelf(f,g){
-    const w=f.w,d=f.d,h=(d>55?95:178);
+  function buildShelf(f,g,H){
+    const w=f.w,d=f.d,h=Math.max(15,H||178);
     const mat=fMat(f.color,.9,.7), matD=fMat(f.color,.7);
     bx(g,mat,3,h,d,-w/2+1.5,h/2,0); bx(g,mat,3,h,d,w/2-1.5,h/2,0);
     bx(g,matD,w,h,2,0,h/2,-d/2+1);
-    const n=Math.max(2,Math.round(h/38));
+    const n=Math.max(1,Math.round(h/38));   // 高さに応じて棚板の枚数を変える
     for(let i=0;i<=n;i++) bx(g,mat,w-4,2.5,d-4,0,3+(h-6)*i/n,1);
   }
-  function buildFridge(f,g){
-    const w=f.w,d=f.d,h=175;
+  function buildFridge(f,g,H){
+    const w=f.w,d=f.d,h=Math.max(30,H||175);
     const mat=new THREE.MeshStandardMaterial({ color:new THREE.Color(f.color||"#cfe8ff").multiplyScalar(1.02), roughness:.35, metalness:.25 });
     bx(g,mat,w,h,d,0,h/2,0);
-    bx(g,M.steel,w-8,1.5,1,0,110,d/2+0.3);
-    bx(g,M.alum,3,50,3,-w/2+8,140,d/2+1.5); bx(g,M.alum,3,40,3,-w/2+8,75,d/2+1.5);
+    bx(g,M.steel,w-8,1.5,1,0,h*0.63,d/2+0.3);                                            // 扉の分かれ目
+    bx(g,M.alum,3,h*0.29,3,-w/2+8,h*0.80,d/2+1.5); bx(g,M.alum,3,h*0.23,3,-w/2+8,h*0.43,d/2+1.5);
   }
-  function buildWasher(f,g){
-    const w=f.w,d=f.d;
-    bx(g,M.whiteBody,w,92,d,0,46,0);
-    cyl(g,new THREE.MeshStandardMaterial({color:0x39424c,roughness:.3}),Math.min(w,d)*0.32,Math.min(w,d)*0.32,2,0,93,2,22);
-    bx(g,M.steel,w-10,6,8,0,90,-d/2+5);
+  function buildWasher(f,g,H){
+    const w=f.w,d=f.d,h=Math.max(30,H||95);
+    bx(g,M.whiteBody,w,h-3,d,0,(h-3)/2,0);
+    cyl(g,new THREE.MeshStandardMaterial({color:0x39424c,roughness:.3}),Math.min(w,d)*0.32,Math.min(w,d)*0.32,2,0,h-2,2,22);
+    bx(g,M.steel,w-10,6,8,0,h-5,-d/2+5);
   }
   function buildExtrude(f,g,h){
     try{
@@ -2061,46 +2105,30 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       const m=new THREE.Mesh(geo,fMat(f.color,.95,.7)); m.castShadow=true; m.receiveShadow=true; g.add(m);
     }catch(err){ console.error("押し出し形状エラー:",err); bx(g,fMat(f.color,.95),f.w,h,f.d,0,h/2,0); }
   }
-  function typeOf(f){
-    const n=f.name||"";
-    if(/冷蔵庫/.test(n)) return "fridge";
-    if(/洗濯/.test(n)) return "washer";
-    if(/テレビ|TV/i.test(n)) return "tv";
-    if(/棚|収納|シェルフ|本棚|食器|タンス|箪笥|チェスト|ドレッサー/.test(n)) return "shelf";
-    if(/ベッド|寝具|布団/.test(n)) return "bed";
-    if(/ソファ/.test(n)) return "sofa";
-    if(/デスク|机/.test(n)) return "desk";
-    if(/こたつ|ローテーブル|座卓/.test(n)) return "lowtable";
-    if(/テーブル|ダイニング/.test(n)) return "table";
-    if(/丸椅子|スツール/.test(n)) return "stool";
-    if(/椅子|チェア/.test(n)) return "chair";
-    if(/壁|障害|柱/.test(n)) return "pillar";
-    return "generic";
-  }
-  const typeH={ fridge:175, washer:95, tv:44, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:0, generic:70 };
   function build3DFurniture(f){
     const g=new THREE.Group();
     const type=typeOf(f);
+    const H=heightOf(f,type);   // ユーザーが指定した高さ（未指定なら種類ごとの既定値）
     const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
-    if(useExtrude){ buildExtrude(f,g,typeH[type]||70); }
+    if(useExtrude){ buildExtrude(f,g,H); }
     else switch(type){
-      case "fridge": buildFridge(f,g); break;
-      case "washer": buildWasher(f,g); break;
-      case "tv":     buildTV(f,g); break;
-      case "shelf":  buildShelf(f,g); break;
+      case "fridge": buildFridge(f,g,H); break;
+      case "washer": buildWasher(f,g,H); break;
+      case "tv":     buildTV(f,g,H); break;
+      case "shelf":  buildShelf(f,g,H); break;
       case "bed":    buildBed(f,g); break;
       case "sofa":   buildSofa(f,g); break;
-      case "desk":   buildDesk(f,g); break;
-      case "lowtable": buildTable(f,g,38); break;
-      case "table":  buildTable(f,g,70); break;
+      case "desk":   buildDesk(f,g,H); break;
+      case "lowtable": buildTable(f,g,H); break;
+      case "table":  buildTable(f,g,H); break;
       case "stool":  { cyl(g,fMat(f.color,.95),f.w/2,f.w/2,6,0,42,0,20); cyl(g,fMat(f.color,.6),4,5,40,0,20,0); const b=cyl(g,fMat(f.color,.55),f.w*0.32,f.w*0.35,3,0,1.5,0,16); break; }
       case "chair":  {
         bx(g,fMat(f.color,.95),f.w*0.92,5,f.d*0.92,0,42,0);
         const back=bx(g,fMat(f.color,.82),f.w*0.92,38,4,0,61,-f.d/2+4); back.rotation.x=-0.08;
         legs4(g,f.w*0.92,f.d*0.92,40,4,fMat(f.color,.55));
         break; }
-      case "pillar": bx(g,fMat(f.color,.9),f.w,ceilH,f.d,0,ceilH/2,0); break;
-      default:       bx(g,fMat(f.color,.95),f.w,70,f.d,0,35,0);
+      case "pillar": { const ph=(f.hCm>0? f.hCm : ceilH); bx(g,fMat(f.color,.9),f.w,ph,f.d,0,ph/2,0); break; }
+      default:       bx(g,fMat(f.color,.95),f.w,H,f.d,0,H/2,0);
     }
     // 椅子スペース判定つきの机には椅子も置く
     if(f.chair && type==="desk"){
