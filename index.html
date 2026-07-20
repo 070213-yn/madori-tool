@@ -1299,14 +1299,15 @@ const PLAN3D = {
     { name:"クローゼット2", mat:"wood",   level:0,   rect:[917,400,1089,516] },
     { name:"洋室4.6",    mat:"wood",      level:0,   rect:[855,516,1207,868] },
     { name:"バルコニー", mat:"concrete",  level:-10, rect:[390,875,1215,992], outside:true },
-    { name:"ポーチ",     mat:"concrete",  level:-12, rect:[1096,160,1215,510], outside:true },
-    { name:"共用廊下",   mat:"concrete",  level:-12, rect:[-160,60,1300,160], outside:true },
+    { name:"ポーチ",     mat:"concrete",  level:-8,  rect:[1096,160,1215,510], outside:true },
+    { name:"共用廊下",   mat:"concrete",  level:-8,  rect:[-160,60,1300,160], outside:true },
   ],
   // 床から天井までの塊（メーターボックス・パイプスペース）
   solids: [
-    { rect:[47,196,105,275],   label:"MB" },
-    { rect:[749,174,800,231],  label:"PS" },
+    { rect:[48,196,105,275],   label:"MB（メーターボックス）" },
+    { rect:[750,175,800,231],  label:"PS（パイプスペース）" },
     { rect:[1096,831,1207,875],label:"洋室4.6 南東のパイプスペース（図面で壁が厚い部分）" },
+    { rect:[617,450,742,493],  label:"キッチン前の壁（カウンターの東半分。図面で黒く塗られた部分）" },
   ],
   // 手すり壁（バルコニー・共用廊下。高さ110cm）
   parapets: [
@@ -1366,7 +1367,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   renderer.toneMappingExposure = 1.1;
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0xcfe2f4, 7000, 26000);
-  const camera = new THREE.PerspectiveCamera(70, 1, 2, 45000);
+  const camera = new THREE.PerspectiveCamera(70, 1, 6, 45000);   // near を大きめに取り、遠景での深度精度不足（面のチラつき）を防ぐ
+  const SUB = -14;   // 壁・床下の潜り込み深さ（床の継ぎ目に隙間が見えないように壁を床下まで伸ばす）
 
   let ceilH = 240;     // 天井の高さcm（スライダーで可変）
   let eyeH  = 150;     // 目線の高さcm
@@ -1533,7 +1535,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     m.castShadow=true; m.receiveShadow=true; scene.add(m); return m;
   }
   slab(-160,56,1300,1000, GROUND_Y,-12, M.facade);        // 建物の下階部分（土台）
-  slab(33,160,1214,875, -12,-0.5, M.concrete);            // 室内の床スラブ
+  slab(33,160,1214,875, -22,-9, M.concrete);              // 室内の床スラブ（一番低い玄関土間より下に置く）
   slab(204,167,212,282, -8,0, M.doorFrame);               // 玄関の上がり框（段差の縁）
 
   // --- 静的な衝突セグメント（壁の腰まわり） ---
@@ -1575,12 +1577,13 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const wallGeos=[];
     function pushBox(wi, s0,s1, y0,y1){
       if(s1-s0<0.5||y1-y0<0.5) return;
+      if(y0<=0.01) y0=SUB;      // 床に接する壁は床下まで伸ばす（床の継ぎ目に隙間・チラつきが出ないように）
       const len=s1-s0, mid=(s0+s1)/2, my=(y0+y1)/2;
       let g;
       if(wi.horiz){ g=new THREE.BoxGeometry(len,y1-y0,wi.t); g.translate(wi.sx+mid,my,wi.az); }
       else        { g=new THREE.BoxGeometry(wi.t,y1-y0,len); g.translate(wi.ax,my,wi.sz+mid); }
       wallGeos.push(g);
-      if(y0<=1 && y1>60){ // 床に接する壁だけ衝突対象
+      if(y0<=SUB+1 && y1>60){ // 床に接する壁だけ衝突対象
         if(wi.horiz) addSeg(wi.sx+s0,wi.az,wi.sx+s1,wi.az,wi.t/2);
         else         addSeg(wi.ax,wi.sz+s0,wi.ax,wi.sz+s1,wi.t/2);
       }
@@ -1600,7 +1603,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     // メーターボックス・PS（床から天井までの塊）
     PLAN3D.solids.forEach(s=>{
       const [x0,y0,x1,y1]=s.rect;
-      const g=new THREE.BoxGeometry(C(x1-x0),ceilH,C(y1-y0)); g.translate(C((x0+x1)/2),ceilH/2,C((y0+y1)/2));
+      const g=new THREE.BoxGeometry(C(x1-x0),ceilH-SUB,C(y1-y0)); g.translate(C((x0+x1)/2),(ceilH+SUB)/2,C((y0+y1)/2));
       wallGeos.push(g);
       addSeg(C(x0),C(y0),C(x1),C(y0),1); addSeg(C(x1),C(y0),C(x1),C(y1),1);
       addSeg(C(x1),C(y1),C(x0),C(y1),1); addSeg(C(x0),C(y1),C(x0),C(y0),1);
@@ -1629,13 +1632,14 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     structGroup.add(paraMesh);
     paraGeos.forEach(g=>g.dispose());
 
-    // 隣の住戸（左右）
-    const nb1=new THREE.Mesh(new THREE.BoxGeometry(C(193),ceilH+14,C(715)), M.facade);
-    nb1.position.set(C(-160+193/2),(ceilH+14)/2-7+7,C((160+875)/2)); nb1.position.y=(ceilH+14)/2; nb1.castShadow=true; nb1.receiveShadow=true;
+    // 隣の住戸（左右）※屋根スラブの下に収め、天面が重ならないようにする
+    const nbH=ceilH+2-SUB;
+    const nb1=new THREE.Mesh(new THREE.BoxGeometry(C(193),nbH,C(715)), M.facade);
+    nb1.position.set(C(-160+193/2),(ceilH+2+SUB)/2,C((160+875)/2)); nb1.castShadow=true; nb1.receiveShadow=true;
     structGroup.add(nb1);
     addSeg(C(-160),C(160),C(33),C(160),2);
-    const nb2=new THREE.Mesh(new THREE.BoxGeometry(C(86),ceilH+14,C(365)), M.facade);
-    nb2.position.set(C(1214+43),(ceilH+14)/2,C((510+875)/2)); nb2.castShadow=true; nb2.receiveShadow=true;
+    const nb2=new THREE.Mesh(new THREE.BoxGeometry(C(86),nbH,C(365)), M.facade);
+    nb2.position.set(C(1214+43),(ceilH+2+SUB)/2,C((510+875)/2)); nb2.castShadow=true; nb2.receiveShadow=true;
     structGroup.add(nb2);
     addSeg(C(1214),C(510),C(1300),C(510),2);
     addSeg(C(1214),C(510),C(1214),C(875),2);
@@ -1659,8 +1663,9 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     });
 
     // 屋根（上の階のスラブ。バルコニー・共用廊下の天井にもなる）
+    // 屋根スラブ。天井面(ceilH)と底面が重なるとチラつくので 2cm 浮かせる
     const roof=new THREE.Mesh(new THREE.BoxGeometry(C(1460),14,C(944)), M.facade);
-    roof.position.set(C((-160+1300)/2), ceilH+7, C((56+1000)/2));
+    roof.position.set(C((-160+1300)/2), ceilH+9, C((56+1000)/2));
     roof.castShadow=true; roof.receiveShadow=true;
     roof.userData.hideInTop=true;
     structGroup.add(roof);
@@ -1671,7 +1676,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       const big=sp[2]==="big";
       const fix=new THREE.Mesh(new THREE.CylinderGeometry(big?26:14,big?28:16,7,20),
         new THREE.MeshStandardMaterial({ color:0xffffff, emissive:0xfff6dd, emissiveIntensity:.9, roughness:.4 }));
-      fix.position.set(C(sp[0]),ceilH-4,C(sp[1]));
+      fix.position.set(C(sp[0]),ceilH-6,C(sp[1]));
       structGroup.add(fix);
       const pl=new THREE.PointLight(0xfff1da, big?2.4:1.5, big?780:450, 1);
       pl.position.set(C(sp[0]),ceilH-22,C(sp[1]));
@@ -1686,6 +1691,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     addSeg(C(927),C(182),C(1077),C(182),2); addSeg(C(927),C(267),C(1077),C(267),2); addSeg(C(927),C(182),C(927),C(267),2); addSeg(C(1077),C(182),C(1077),C(267),2); // 浴槽
 
     scene.add(structGroup);
+    buildFixtures();   // レンジフードやエアコンは天井高に合わせて作り直す
   }
 
   // --- ドア・窓（開閉できる建具） ---
@@ -1895,7 +1901,9 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   }
 
   // --- 造作（キッチン・トイレ・洗面台・浴槽・エアコン） ---
+  let fixGroup=null;
   function buildFixtures(){
+    if(fixGroup){ scene.remove(fixGroup); fixGroup.traverse(o=>{ if(o.geometry) o.geometry.dispose(); }); }
     const g=new THREE.Group();
     function box(mat, x0,y0,x1,y1, yb,yt, cast){ // 画像px矩形
       const m=new THREE.Mesh(new THREE.BoxGeometry(C(x1-x0),yt-yb,C(y1-y0)),mat);
@@ -1937,12 +1945,12 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     box(M.whiteBody, 927,182, 1077,267, -2,53);
     box(M.tileBath===undefined?M.whiteBody:M.black, 940,192, 1064,257, 53,54, false).material=new THREE.MeshStandardMaterial({color:0x9fb9c4,roughness:.2});
     const sh=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.4,60,8),M.alum); sh.position.set(C(930),110,C(320)); g.add(sh);
-    // エアコン2台（南の壁の高い位置）
+    // エアコン2台（南の壁の高い位置。天井高を下げても突き抜けないよう天井から吊る）
     [[335],[450]].forEach(p=>{
       const ac=new THREE.Mesh(new THREE.BoxGeometry(76,26,20),M.whiteBody);
-      ac.position.set(C(p[0]), 212, C(868)-9-10); ac.castShadow=true; g.add(ac);
+      ac.position.set(C(p[0]), ceilH-26, C(868)-9-10); ac.castShadow=true; g.add(ac);
     });
-    scene.add(g);
+    fixGroup=g; scene.add(g);
   }
 
   // --- 家具の3D化 ---
@@ -2116,8 +2124,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     if(inRect(x,z,[105,167,210,282])) return -8;      // 玄関
     if(inRect(x,z,[917,167,1089,400])) return -2;     // 浴室
     if(inRect(x,z,[390,875,1215,992])) return -10;    // バルコニー
-    if(inRect(x,z,[1096,160,1215,510])) return -12;   // ポーチ
-    if(z<=C(160)) return -12;                          // 共用廊下
+    if(inRect(x,z,[1096,160,1215,510])) return -8;    // ポーチ
+    if(z<=C(160)) return -8;                           // 共用廊下
     return 0;
   }
 
@@ -2311,10 +2319,9 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     renderer.render(scene,camera);
   }
 
-  // --- 初期構築 ---
+  // --- 初期構築 ---（buildStructure の中で造作も作られる）
   buildStructure();
   buildOpeningTrims();
-  buildFixtures();
 
   const api={
     _dbg:{ get renderer(){return renderer;}, get scene(){return scene;}, get camera(){return camera;}, get pos(){return pos;}, get doors(){return doorList;}, step(dt){ doorList.forEach(d=>d.update(dt)); }, collide(x,z){ const p={x,z}; resolveCollision(p); return p; }, setPos(x,z,yaw){ pos.x=x; pos.z=z; camY=eyeH+floorLevelAt(x,z); camera.position.set(x,camY,z); if(yaw!=null){ camera.rotation.set(0,yaw,0); } }, toggleTop(){ toggleTopView(); }, render(){ renderer.render(scene,camera); } },
