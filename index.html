@@ -2483,21 +2483,27 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
         this.group.add(this.pivotA);
       }
       else if(this.kind==="slidewood"){
-        // 片引き戸：s1側（リビングから見て右）の1枚だけがスライドし、s0側の1枚は固定
-        const pw=w/2+3, rail=3.4, startS=w-pw;
+        // 引き違い戸：左右どちらの戸もスライドできる。見ている側の戸が開く
+        const pw=w/2+3, rail=3.4, travel=w-pw-2;
         const yaw = wi.horiz? 0 : -Math.PI/2;
-        const pFix=makeShoji(pw,h,false);        // 固定側
-        pFix.rotation.y=yaw;
-        pFix.position.set(A.x - N.x*rail, sill, A.z - N.z*rail);
-        pFix.userData={ closed:pFix.position.clone(), slide:new THREE.Vector3(0,0,0) };
-        const pMov=makeShoji(pw,h,true);         // 可動側（引手つき）
-        pMov.rotation.y=yaw;
-        pMov.position.set(A.x + U.x*startS + N.x*rail, sill, A.z + U.z*startS + N.z*rail);
-        pMov.userData={ closed:pMov.position.clone(), slide:new THREE.Vector3(-U.x*(startS-2), 0, -U.z*(startS-2)) };
-        this.panels=[pFix,pMov];
-        this.group.add(pFix,pMov);
-        // 開けても固定側（s0側の半分）は塞がったまま
-        this.fixedSeg={ x1:A.x, z1:A.z, x2:A.x+U.x*pw, z2:A.z+U.z*pw, half:Math.max(3,wi.t/2) };
+        this.panels=[];
+        [0,1].forEach(i=>{
+          const p=makeShoji(pw,h,true);
+          p.rotation.y=yaw;
+          const startS=(i===0)? 0 : (w-pw);
+          const off=(i===0? -1:1)*rail;                 // 2本のレールに振り分ける
+          p.position.set(A.x+U.x*startS+N.x*off, sill, A.z+U.z*startS+N.z*off);
+          const dir=(i===0)? 1 : -1;                     // s0側の戸は右へ、s1側の戸は左へ動く
+          p.userData={ closed:p.position.clone(), slide:new THREE.Vector3(U.x*travel*dir,0,U.z*travel*dir) };
+          p.traverse(o=>{ o.userData.panelIdx=i; });
+          this.panels.push(p); this.group.add(p);
+        });
+        this.pt=[0,0]; this.pstate=["closed","closed"];
+        const mid={x:A.x+U.x*(w/2), z:A.z+U.z*(w/2)};
+        this.halfSegs=[
+          { x1:A.x, z1:A.z, x2:mid.x, z2:mid.z, half:Math.max(3,wi.t/2) },   // s0側（閉まっていれば塞ぐ）
+          { x1:mid.x, z1:mid.z, x2:B.x, z2:B.z, half:Math.max(3,wi.t/2) },   // s1側
+        ];
       }
       else if(this.kind==="slideglass"){
         // 引き違いのガラス窓2枚。開けると片方がもう片方に重なる
@@ -2519,9 +2525,33 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       doorsGroup.add(this.group);
       rayTargets.push(this.group);
     }
-    get isOpen(){ return this.state==="open"||this.state==="opening"; }
-    toggle(){ this.state=this.isOpen? "closing":"opening"; }
+    get isOpen(){
+      if(this.kind==="slidewood") return this.pstate.some(s=>s==="open"||s==="opening");
+      return this.state==="open"||this.state==="opening";
+    }
+    // idx を渡すと引き違い戸の「その戸」だけを動かす（もう片方は自動で閉じる）
+    toggle(idx){
+      if(this.kind==="slidewood"){
+        const i=(idx===0||idx===1)? idx : (this.pstate[1]!=="closed"? 1 : 0);
+        const opening=(this.pstate[i]==="closed"||this.pstate[i]==="closing");
+        this.pstate[i]= opening? "opening" : "closing";
+        if(opening){ const o=1-i; if(this.pstate[o]!=="closed") this.pstate[o]="closing"; }
+        return;
+      }
+      this.state=this.isOpen? "closing":"opening";
+    }
     update(dt){
+      if(this.kind==="slidewood"){
+        let moving=false;
+        for(let i=0;i<2;i++){
+          if(this.pstate[i]==="opening"){ this.pt[i]=Math.min(1,this.pt[i]+dt*this.speed); if(this.pt[i]===1) this.pstate[i]="open"; moving=true; }
+          else if(this.pstate[i]==="closing"){ this.pt[i]=Math.max(0,this.pt[i]-dt*this.speed); if(this.pt[i]===0) this.pstate[i]="closed"; moving=true; }
+        }
+        if(!moving) return;
+        this.panels.forEach((p,i)=>{ p.position.copy(p.userData.closed).addScaledVector(p.userData.slide, easeInOut(this.pt[i])); });
+        this.t=Math.max(this.pt[0],this.pt[1]);
+        return;
+      }
       if(this.state==="opening"){ this.t=Math.min(1,this.t+dt*this.speed); if(this.t===1) this.state="open"; }
       else if(this.state==="closing"){ this.t=Math.max(0,this.t-dt*this.speed); if(this.t===0) this.state="closed"; }
       else return;
@@ -2532,8 +2562,14 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       else { this.panels.forEach(p=>{ p.position.copy(p.userData.closed).addScaledVector(p.userData.slide,e); }); }
     }
     colSegs(){
+      if(this.kind==="slidewood"){
+        // 開いていない側の半分だけが塞がる（開けた戸はもう片方に重なる）
+        const segs=[];
+        for(let i=0;i<2;i++) if(this.pt[i]<0.35) segs.push(this.halfSegs[i]);
+        return segs;
+      }
       if(this.t<0.35) return [this.baseSeg];
-      if(this.fixedSeg) return [this.fixedSeg];   // 引き戸・引き違い窓は開けても片側は塞がったまま
+      if(this.fixedSeg) return [this.fixedSeg];   // 引き違い窓は開けても片側は塞がったまま
       return [];
     }
   }
@@ -3415,10 +3451,10 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   // ドアの注視判定
   const raycaster=new THREE.Raycaster();
   const centerVec=new THREE.Vector2(0,0);
-  let promptDoor=null, promptSit=null, lastPrompt="";
+  let promptDoor=null, promptPanel=null, promptSit=null, lastPrompt="";
   let sitting=null, standPos=null;
   function updatePrompt(){
-    promptDoor=null; promptSit=null;
+    promptDoor=null; promptPanel=null; promptSit=null;
     if(topView){ setPrompt(""); return; }
     if(sitting){ setPrompt(`「${sitting.name}」に座り中 — 立ち上がる（E または WASD）`); return; }
     camera.updateMatrixWorld();      // 移動直後でも正しい位置から視線判定する
@@ -3427,14 +3463,19 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const hits=raycaster.intersectObjects(rayTargets,true);
     let doorDist=Infinity;
     for(const h of hits){
+      const idx=h.object.userData.panelIdx;       // 引き違い戸は見ている戸だけを動かす
       let o=h.object;
       while(o&&!o.userData.door) o=o.parent;
-      if(o&&o.userData.door){ promptDoor=o.userData.door; doorDist=h.distance; break; }
+      if(o&&o.userData.door){ promptDoor=o.userData.door; promptPanel=(idx===0||idx===1)?idx:null; doorDist=h.distance; break; }
     }
     // 座れる家具は「真下を向かなくても、近づいて向いていればOK」。ドアより近ければそちらを優先
     const sit=findSitNear();
-    if(sit && sit.dist<doorDist){ promptSit=sit.obj; promptDoor=null; }
-    if(promptDoor)     setPrompt(`${promptDoor.label}を${promptDoor.isOpen?"閉める":"開ける"}（E または クリック）`);
+    if(sit && sit.dist<doorDist){ promptSit=sit.obj; promptDoor=null; promptPanel=null; }
+    if(promptDoor){
+      let open=promptDoor.isOpen;
+      if(promptDoor.kind==="slidewood"&&promptPanel!=null) open=(promptDoor.pt[promptPanel]>0.5);
+      setPrompt(`${promptDoor.label}を${open?"閉める":"開ける"}（E または クリック）`);
+    }
     else if(promptSit) setPrompt(`「${promptSit.userData.sit.name}」に座る（E または クリック）`);
     else setPrompt("");
   }
@@ -3478,7 +3519,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   }
   function interact(){
     if(sitting){ standUp(); return; }
-    if(promptDoor){ promptDoor.toggle(); return; }
+    if(promptDoor){ promptDoor.toggle(promptPanel); return; }
     if(promptSit){ sitOn(promptSit); }
   }
   function setPrompt(t){
