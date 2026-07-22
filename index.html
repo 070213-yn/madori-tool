@@ -618,7 +618,8 @@ function floorKeyFor(roomName){
   return r? r.def : "wood";
 }
 function defaultDecor(){
-  return { wall:"#f3f0ea", door:"#b08a5e", floor:{}, win:{
+  // 初期値は内見写真に合わせた色（白っぽい壁／ライトオークの建具）
+  return { wall:"#f6f3ee", door:"#dbccb4", floor:{}, win:{
     wldk:{type:"curtain",color:"#d9cfc0"}, w46:{type:"curtain",color:"#d9cfc0"},
     w61:{type:"curtain",color:"#d9cfc0"},  w46n:{type:"blind",color:"#e8e4dc"} } };
 }
@@ -1931,18 +1932,19 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
     return t;
   }
-  const woodFloorTex = makeTex(512,512,(g)=>{      // フローリング（180cm四方ぶん）
-    g.fillStyle="#c8a97e"; g.fillRect(0,0,512,512);
-    const row=42;
+  // フローリング。内見写真に合わせて「白っぽい木目」にしてある
+  const woodFloorTex = makeTex(512,512,(g)=>{
+    g.fillStyle="#f2ece2"; g.fillRect(0,0,512,512);
+    const row=36;
     for(let y=0,i=0;y<512;y+=row,i++){
       for(let x=-(i%3)*170;x<512;x+=256){
-        const tone=200+((x*13+y*7)%36)-18;
-        g.fillStyle=`rgb(${tone},${(tone*0.80)|0},${(tone*0.575)|0})`;
-        g.fillRect(x,y,254,row-2);
-        g.strokeStyle="rgba(120,84,50,.35)"; g.lineWidth=1;
-        for(let k=0;k<4;k++){ const gy=y+6+((x+k*97)%(row-10)); g.beginPath(); g.moveTo(x+6,gy); g.lineTo(x+248,gy+((k%2)?2:-2)); g.stroke(); }
+        const tone=243+((x*13+y*7)%14)-7;
+        g.fillStyle=`rgb(${tone},${(tone*0.975)|0},${(tone*0.94)|0})`;
+        g.fillRect(x,y,254,row-1.6);
+        g.strokeStyle="rgba(196,183,166,.30)"; g.lineWidth=1;
+        for(let k=0;k<5;k++){ const gy=y+5+((x+k*97)%(row-9)); g.beginPath(); g.moveTo(x+6,gy); g.lineTo(x+248,gy+((k%2)?1.6:-1.6)); g.stroke(); }
       }
-      g.fillStyle="rgba(90,60,35,.5)"; g.fillRect(0,y+row-2,512,2);
+      g.fillStyle="rgba(186,172,154,.45)"; g.fillRect(0,y+row-1.6,512,1.6);
     }
   });
   woodFloorTex.repeat.set(1/180,1/180);
@@ -1950,10 +1952,10 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   const woodDoorTex = makeTex(256,256,(g)=>{
     g.fillStyle="#ffffff"; g.fillRect(0,0,256,256);
     for(let x=0;x<256;x+=8){
-      const t=232+((x*31)%36)-18;
-      g.fillStyle=`rgba(${t},${t},${t},.75)`; g.fillRect(x,0,6,256);
+      const t=243+((x*31)%18)-9;                     // 木目は控えめ（内見写真に合わせる）
+      g.fillStyle=`rgba(${t},${t},${t},.6)`; g.fillRect(x,0,6,256);
     }
-    g.strokeStyle="rgba(150,150,150,.45)"; g.lineWidth=1;
+    g.strokeStyle="rgba(178,178,178,.28)"; g.lineWidth=1;
     for(let i=0;i<10;i++){ g.beginPath(); g.moveTo((i*53)%256,0); g.bezierCurveTo((i*53)%256+14,80,(i*53)%256-10,180,(i*53)%256+6,256); g.stroke(); }
   });
   const tileWhiteTex = makeTex(256,256,(g)=>{      // 白タイル（100cm四方ぶん）
@@ -2057,8 +2059,8 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     alum:      new THREE.MeshStandardMaterial({ color:0xd9dde0, roughness:.4, metalness:.4 }),
     glass:     new THREE.MeshStandardMaterial({ color:0xcfe6ff, roughness:.06, metalness:.25, transparent:true, opacity:.22, side:THREE.DoubleSide }),
     frosted:   new THREE.MeshStandardMaterial({ color:0xffffff, roughness:.6, transparent:true, opacity:.55, side:THREE.DoubleSide }),
-    shoji:     new THREE.MeshStandardMaterial({ color:0xf3f1ec, roughness:.95 }),   // 引き戸の面材（透けない）
-    shojiFrame:new THREE.MeshStandardMaterial({ color:0xe6e3dc, roughness:.7 }),    // 引き戸の框も白
+    shoji:     new THREE.MeshStandardMaterial({ map:woodDoorTex, color:0xded1bb, roughness:.82 }), // 引き戸の面材（ライトオーク）
+    shojiFrame:new THREE.MeshStandardMaterial({ color:0xf1efe9, roughness:.7 }),    // 引き戸の枠は白
     whiteBody: new THREE.MeshStandardMaterial({ color:0xf6f6f4, roughness:.5 }),
     steel:     new THREE.MeshStandardMaterial({ color:0x9aa2a8, roughness:.35, metalness:.7 }),
     black:     new THREE.MeshStandardMaterial({ color:0x24262a, roughness:.5 }),
@@ -2109,8 +2111,9 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     })
   );
   scene.add(sky);
-  scene.add(new THREE.HemisphereLight(0xcfe0f5, 0xb5b0a6, 1.1));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  // 室内が青白くならないよう、空色は控えめに・環境光は少し暖色にする
+  scene.add(new THREE.HemisphereLight(0xe4e9ec, 0xd2cabb, 1.05));
+  scene.add(new THREE.AmbientLight(0xfff4e6, 0.62));
   const sun = new THREE.DirectionalLight(0xfff4e2, 2.6);
   sun.position.set(1400, 2100, 3600);
   sun.castShadow = true;
@@ -2739,7 +2742,16 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     // キッチンカウンター（流し台＋コンロ）
     box(M.whiteBody, 497,372, 737,453, 0,82);
     box(M.counterTop,495,370, 739,455, 82,85);
-    box(M.whiteBody, 497,455, 617,490, 0,82);
+    // カウンターのリビング側は「オープン棚」になっている（内見写真）
+    const shelfMat=new THREE.MeshStandardMaterial({ map:woodDoorTex, color:0xe0d4bf, roughness:.8 });
+    const shelfIn =new THREE.MeshStandardMaterial({ color:0xf6f4ee, roughness:.75 });
+    box(shelfMat, 497,455, 503,492, 0,82);          // 左の側板
+    box(shelfMat, 611,455, 617,492, 0,82);          // 右の側板
+    box(shelfMat, 497,486, 617,492, 0,82, false);   // 背板
+    box(shelfIn,  503,455, 611,492, 55,58, false);  // 棚板（上）
+    box(shelfIn,  503,455, 611,492, 30,33, false);  // 棚板（中）
+    box(shelfIn,  503,455, 611,492,  4, 7, false);  // 棚板（下）
+    box(shelfIn,  554,455, 558,492, 7,55, false);   // 中央の仕切り
     box(M.counterTop,495,455, 619,492, 82,85);
     const sink=box(M.steel, 512,382, 595,443, 84.5,86.5, false);
     sink.material=M.steel;
@@ -2761,12 +2773,29 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     bowl.position.set(C(275),19,C(343)); bowl.scale.x=1.25; bowl.castShadow=true; g.add(bowl);
     const seat=new THREE.Mesh(new THREE.CylinderGeometry(19,19,4,18),M.whiteBody);
     seat.position.set(C(275),40,C(343)); seat.scale.x=1.2; g.add(seat);
-    // 洗面台（キャビネット＋ミラー）
-    box(M.whiteBody, 750,297, 803,373, 0,78);
-    box(M.counterTop,748,295, 805,375, 78,82);
-    const bs=new THREE.Mesh(new THREE.CylinderGeometry(15,11,8,16),M.whiteBody); bs.position.set(C(776),85,C(335)); bs.scale.z=1.2; g.add(bs);
-    const mir=new THREE.Mesh(new THREE.BoxGeometry(2.5,70,C(70)),new THREE.MeshStandardMaterial({color:0xcfe0ea,roughness:.05,metalness:.6}));
-    mir.position.set(C(742)+7,135,C(335)); g.add(mir);
+    // 洗面台（内見写真に合わせて、横に長いカウンター＋三面鏡）
+    const mirMat=new THREE.MeshStandardMaterial({color:0xbcd2de,roughness:.07,metalness:.3});
+    box(M.whiteBody, 752,290, 806,392, 0,76);                      // 下のキャビネット
+    box(M.counterTop,750,288, 808,432, 76,80);                     // カウンター（右に長く伸びる）
+    box(M.whiteBody, 750,288, 808,292, 80,90, false);              // 立ち上がり（バックガード）
+    const basin=new THREE.Mesh(new THREE.BoxGeometry(C(40),4,C(60)),M.whiteBody);
+    basin.position.set(C(779),78.5,C(335)); g.add(basin);
+    const bowl2=new THREE.Mesh(new THREE.BoxGeometry(C(30),6,C(44)),new THREE.MeshStandardMaterial({color:0xfbfbf9,roughness:.25}));
+    bowl2.position.set(C(779),77,C(335)); g.add(bowl2);
+    const tap=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.7,17,10),M.alum); tap.position.set(C(779),88,C(300)); g.add(tap);
+    const tap2=new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,13,10),M.alum); tap2.rotation.x=Math.PI/2; tap2.position.set(C(779),95,C(306)); g.add(tap2);
+    // 三面鏡（3枚に分かれた鏡扉）
+    for(let i=0;i<3;i++){
+      const z0=292+i*34;
+      box(new THREE.MeshStandardMaterial({color:0xf4f4f2,roughness:.5}), 750,z0, 758,z0+33, 92,168, false);
+      const m3=new THREE.Mesh(new THREE.BoxGeometry(1.2,72,C(31)),mirMat);
+      m3.position.set(C(758)+0.8,130,C(z0+16.5)); g.add(m3);
+    }
+    // 洗濯機置き場の上の棚とハンガーバー
+    box(new THREE.MeshStandardMaterial({color:0xf7f7f5,roughness:.6}), 812,300, 908,336, 150,154);
+    box(new THREE.MeshStandardMaterial({color:0xf7f7f5,roughness:.6}), 812,300, 908,304, 154,172, false);
+    const rod=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.1,C(92),10),M.alum);
+    rod.rotation.x=Math.PI/2; rod.position.set(C(860),142,C(330)); g.add(rod);
     // 浴槽＋シャワー
     box(M.whiteBody, 927,182, 1077,267, -2,53);
     box(M.tileBath===undefined?M.whiteBody:M.black, 940,192, 1064,257, 53,54, false).material=new THREE.MeshStandardMaterial({color:0x9fb9c4,roughness:.2});
@@ -2776,6 +2805,51 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
       const ac=new THREE.Mesh(new THREE.BoxGeometry(76,26,20),M.whiteBody);
       ac.position.set(C(p[0]), ceilH-26, C(868)-9-10); ac.castShadow=true; g.add(ac);
     });
+    // 洋室6.1の窓の手すり（内見時に付いていた、外せるタイプ）
+    { const G=openingGeom("w61");
+      if(G){
+        const bar=new THREE.MeshStandardMaterial({color:0xefece4,roughness:.45,metalness:.25});
+        const inward = isIndoor(G.A.x+G.U.x*G.wcm/2+G.N.x*35, G.A.z+G.U.z*G.wcm/2+G.N.z*35)? 1 : -1;
+        const zz = G.A.z + G.N.z*inward*(G.t/2+3);
+        [G.sill+30, G.sill+44].forEach(y=>{
+          const b=new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,G.wcm-6,10),bar);
+          b.rotation.z=Math.PI/2; b.position.set(G.A.x+G.U.x*G.wcm/2, y, zz); g.add(b);
+        });
+        [-1,1].forEach(s=>{                                  // 端の取付金具
+          const br=new THREE.Mesh(new THREE.BoxGeometry(4,20,5),bar);
+          br.position.set(G.A.x+G.U.x*(G.wcm/2 + s*(G.wcm/2-4)), G.sill+37, zz); g.add(br);
+        });
+      }
+    }
+    // 洗面室の入口の段差（見切り材）
+    box(new THREE.MeshStandardMaterial({color:0xe9e3d8,roughness:.7}), 757,514, 843,519, 0,2.4);
+
+    // コンセントとスイッチ（内見写真の位置を参考に）
+    const plateW=new THREE.MeshStandardMaterial({color:0xf8f8f6,roughness:.55});
+    // [x, y(画像px), 向き(0=+z / 1=-z / 2=+x / 3=-x), 高さcm, 種類 0=コンセント 1=スイッチ]
+    const plates=[
+      [120,404,0,25,0],[330,404,0,25,0],[360,404,0,118,1],   // 洋室6.1（北側の壁）
+      [ 60,862,1,25,0],[300,862,1,25,0],                      // 洋室6.1（南側）
+      [383,300,3,25,0],[383,470,3,118,1],                     // 洋室6.1（東の壁）
+      [420,862,1,25,0],[700,862,1,25,0],                      // LDK 南
+      [745,600,3,25,0],[745,300,3,118,1],                     // LDK 東
+      [400,180,0,25,0],[660,300,2,110,0],                     // LDK 北・キッチン脇
+      [900,520,0,25,0],[1180,520,0,25,0],[1120,520,0,118,1],  // 洋室4.6（北側）
+      [900,862,1,25,0],[1150,862,1,25,0],                     // 洋室4.6（南側）
+      [1200,600,3,25,0],                                      // 洋室4.6（東の壁）
+      [250,282,1,118,1],[230,167,0,118,1],                    // 廊下・玄関
+    ];
+    plates.forEach(p=>{
+      const isSw=p[4]===1;
+      const w0=isSw?8.5:7, h0=isSw?12:11.5;
+      const geo=(p[2]<2)? new THREE.BoxGeometry(w0,h0,1.2) : new THREE.BoxGeometry(1.2,h0,w0);
+      const m=new THREE.Mesh(geo,plateW);
+      const off=(p[2]===0||p[2]===2)? 0.9 : -0.9;
+      const x=C(p[0])+((p[2]===2)?off:(p[2]===3?-0.9:0));
+      const z=C(p[1])+((p[2]===0)?off:(p[2]===1?-0.9:0));
+      m.position.set(x,p[3],z); g.add(m);
+    });
+
     fixGroup=g; scene.add(g);
   }
 
