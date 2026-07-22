@@ -271,9 +271,14 @@
       <div class="row"><label style="min-width:auto;"><input type="checkbox" id="pLockRatio"> 比率を保ったまま大きさを変える</label></div>
       <div class="row">
         <label>角度</label>
-        <button class="sub" id="pRotL">⟲ 左90°</button>
-        <button class="sub" id="pRotR">⟳ 右90°</button>
-        <span class="badge" id="pAngle">0°</span>
+        <input type="number" id="pAngleNum" step="1" min="-360" max="720" style="width:66px;"><span class="hint" style="margin:0;">度</span>
+        <button class="sub" id="pRotL" title="左に90度">⟲90</button>
+        <button class="sub" id="pRotR" title="右に90度">⟳90</button>
+      </div>
+      <div class="row" style="margin-top:-2px;">
+        <input type="range" id="pAngleRange" min="0" max="359" step="1" style="flex:1;">
+        <button class="sub" id="pAngleM1" title="1度ずつ左に">−1</button>
+        <button class="sub" id="pAngleP1" title="1度ずつ右に">＋1</button>
       </div>
       <div class="row"><label>形</label>
         <select id="pShape" style="flex:1;">
@@ -1083,7 +1088,7 @@ function fillPropPanel(f){
   const canH=canSetHeight(f);
   document.getElementById("pHRow").style.display=canH?"flex":"none";
   if(canH) document.getElementById("pH").value=Math.round(heightOf(f));
-  document.getElementById("pAngle").textContent=(f.angle||0)+"°";
+  showAngle(f.angle||0);
   document.getElementById("pColor").value=rgbToHex(f.color);
   const gl=glossOf(f);
   document.getElementById("pGloss").value=gl;
@@ -1235,8 +1240,25 @@ document.getElementById("pPicInput").onchange=e=>{
   img.src=URL.createObjectURL(file);
   e.target.value="";
 };
-document.getElementById("pRotL").onclick=()=>{ applyEdit(f=>f.angle=((f.angle||0)+270)%360,true); document.getElementById("pAngle").textContent=(ctxSelFurn()?.angle||0)+"°"; };
-document.getElementById("pRotR").onclick=()=>{ applyEdit(f=>f.angle=((f.angle||0)+90)%360,true); document.getElementById("pAngle").textContent=(ctxSelFurn()?.angle||0)+"°"; };
+// ===== 角度（1度単位で自由に調整）=====
+function normAngle(a){ a=Math.round(a||0)%360; return a<0? a+360 : a; }
+function showAngle(a){
+  a=normAngle(a);
+  document.getElementById("pAngleNum").value=a;
+  document.getElementById("pAngleRange").value=a;
+}
+function setAngle(a){
+  const v=normAngle(a);
+  applyEdit(f=>f.angle=v,true);
+  showAngle(v);
+}
+function nudgeAngle(delta){ const f=ctxSelFurn(); if(f) setAngle((f.angle||0)+delta); }
+document.getElementById("pAngleNum").oninput=e=>{ const v=parseFloat(e.target.value); if(!isNaN(v)) setAngle(v); };
+document.getElementById("pAngleRange").oninput=e=>setAngle(parseInt(e.target.value,10)||0);
+document.getElementById("pAngleM1").onclick=()=>nudgeAngle(-1);
+document.getElementById("pAngleP1").onclick=()=>nudgeAngle(1);
+document.getElementById("pRotL").onclick=()=>nudgeAngle(-90);
+document.getElementById("pRotR").onclick=()=>nudgeAngle(90);
 document.getElementById("pChair").onchange=e=>{ applyEdit(f=>f.chair=e.target.checked,true); document.getElementById("chairOpts").style.display=e.target.checked?"block":"none"; };
 document.getElementById("pChairDir").onchange=e=>applyEdit(f=>f.chairDir=e.target.value,true);
 document.getElementById("pChairDepth").oninput=e=>applyEdit(f=>f.chairDepth=parseFloat(e.target.value)||0,true);
@@ -1315,7 +1337,9 @@ function loadFromObj(d){
   scaleCmPerPx=d.scaleCmPerPx||FIXED_SCALE; furns=d.furns||[]; nextId=d.nextId||1;
   furns.forEach(f=>{ if(f.id>=nextId) nextId=f.id+1; });
   if(d.calibCm) document.getElementById("calibCm").value=d.calibCm;
-  decor=normalizeDecor(d.decor); initDecorUI(); if(on3DDecor) on3DDecor();
+  // 内装の復元で万一エラーが出ても、家具の描画だけは必ず続ける
+  try{ decor=normalizeDecor(d.decor); initDecorUI(); if(on3DDecor) on3DDecor(); }
+  catch(err){ console.error("内装の復元でエラー:",err); }
   document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2);
   selectedId=null; document.getElementById("propBox").style.display="none";
   updateScaleInfo(); furns.forEach(renderFurn); drawGrid(); refreshOverlap();
@@ -3711,7 +3735,9 @@ function applyWorking(w){
   if(!w) return;
   scaleCmPerPx=FIXED_SCALE; document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2); updateScaleInfo();
   if(w.calibCm!=null) document.getElementById("calibCm").value=w.calibCm;
-  if(w.decor && JSON.stringify(normalizeDecor(w.decor))!==JSON.stringify(decor)){ decor=normalizeDecor(w.decor); initDecorUI(); if(on3DDecor) on3DDecor(); }
+  try{
+    if(w.decor && JSON.stringify(normalizeDecor(w.decor))!==JSON.stringify(decor)){ decor=normalizeDecor(w.decor); initDecorUI(); if(on3DDecor) on3DDecor(); }
+  }catch(err){ console.error("内装の同期でエラー:",err); }
   const incoming=w.furns||[]; const inIds=new Set(incoming.map(f=>f.id));
   furns.filter(f=>!inIds.has(f.id)).forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); });
   const byId={}; furns.forEach(f=>byId[f.id]=f);
