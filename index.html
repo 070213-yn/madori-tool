@@ -2747,11 +2747,11 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const shelfIn =new THREE.MeshStandardMaterial({ color:0xf6f4ee, roughness:.75 });
     box(shelfMat, 497,455, 503,492, 0,82);          // 左の側板
     box(shelfMat, 611,455, 617,492, 0,82);          // 右の側板
-    box(shelfMat, 497,486, 617,492, 0,82, false);   // 背板
-    box(shelfIn,  503,455, 611,492, 55,58, false);  // 棚板（上）
-    box(shelfIn,  503,455, 611,492, 30,33, false);  // 棚板（中）
-    box(shelfIn,  503,455, 611,492,  4, 7, false);  // 棚板（下）
-    box(shelfIn,  554,455, 558,492, 7,55, false);   // 中央の仕切り
+    box(shelfMat, 497,455, 617,461, 0,82, false);   // 背板（キッチン側。開口はリビング側を向く）
+    box(shelfIn,  503,461, 611,492, 55,58, false);  // 棚板（上）
+    box(shelfIn,  503,461, 611,492, 30,33, false);  // 棚板（中）
+    box(shelfIn,  503,461, 611,492,  4, 7, false);  // 棚板（下）
+    box(shelfIn,  554,461, 558,492, 7,55, false);   // 中央の仕切り
     box(M.counterTop,495,455, 619,492, 82,85);
     const sink=box(M.steel, 512,382, 595,443, 84.5,86.5, false);
     sink.material=M.steel;
@@ -2824,31 +2824,58 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     // 洗面室の入口の段差（見切り材）
     box(new THREE.MeshStandardMaterial({color:0xe9e3d8,roughness:.7}), 757,514, 843,519, 0,2.4);
 
-    // コンセントとスイッチ（内見写真の位置を参考に）
+    // コンセントとスイッチ。必ず壁の面にぴったり付くよう、壁の位置と厚みから計算する
     const plateW=new THREE.MeshStandardMaterial({color:0xf8f8f6,roughness:.55});
-    // [x, y(画像px), 向き(0=+z / 1=-z / 2=+x / 3=-x), 高さcm, 種類 0=コンセント 1=スイッチ]
+    const plateS=new THREE.MeshStandardMaterial({color:0xe9e9e5,roughness:.6});
+    const holeM =new THREE.MeshStandardMaterial({color:0xcecec9,roughness:.85});
+    function wallAt(kind,coord){          // kind:"v"=縦壁のx / "h"=横壁のy（画像px）
+      let best=null,bd=1e9;
+      PLAN3D.walls.forEach(w=>{
+        const horiz=(w.a[1]===w.b[1]);
+        if(kind==="v"&&!horiz){ const d=Math.abs(w.a[0]-coord); if(d<bd){bd=d;best=w;} }
+        if(kind==="h"&& horiz){ const d=Math.abs(w.a[1]-coord); if(d<bd){bd=d;best=w;} }
+      });
+      if(!best) return null;
+      return { c:C(kind==="v"? best.a[0] : best.a[1]), t:C(best.t||PLAN3D.wallT) };
+    }
+    // {v|h:壁の座標(px), at:壁沿いの位置(px), dir:+1/-1(壁のどちら側), y:高さcm, sw:スイッチ}
     const plates=[
-      [120,404,0,25,0],[330,404,0,25,0],[360,404,0,118,1],   // 洋室6.1（北側の壁）
-      [ 60,862,1,25,0],[300,862,1,25,0],                      // 洋室6.1（南側）
-      [383,300,3,25,0],[383,470,3,118,1],                     // 洋室6.1（東の壁）
-      [420,862,1,25,0],[700,862,1,25,0],                      // LDK 南
-      [745,600,3,25,0],[745,300,3,118,1],                     // LDK 東
-      [400,180,0,25,0],[660,300,2,110,0],                     // LDK 北・キッチン脇
-      [900,520,0,25,0],[1180,520,0,25,0],[1120,520,0,118,1],  // 洋室4.6（北側）
-      [900,862,1,25,0],[1150,862,1,25,0],                     // 洋室4.6（南側）
-      [1200,600,3,25,0],                                      // 洋室4.6（東の壁）
-      [250,282,1,118,1],[230,167,0,118,1],                    // 廊下・玄関
+      // LDK
+      {h:167, at:560, dir:+1, y:28}, {v:742, at:200, dir:-1, y:28},
+      {v:742, at:430, dir:-1, y:105}, {v:390, at:380, dir:+1, y:28},
+      {v:390, at:300, dir:+1, y:118, sw:true},
+      {h:868, at:450, dir:-1, y:28}, {h:868, at:660, dir:-1, y:28},
+      // 洋室6.1
+      {v:40,  at:500, dir:+1, y:28}, {h:400, at:250, dir:+1, y:28},
+      {v:390, at:520, dir:-1, y:118, sw:true},
+      {h:868, at:100, dir:-1, y:28}, {h:868, at:300, dir:-1, y:28},
+      // 洋室4.6
+      {h:516, at:1150, dir:+1, y:28}, {v:855, at:560, dir:+1, y:118, sw:true},
+      {v:855, at:640, dir:+1, y:28}, {v:1207,at:620, dir:-1, y:28},
+      {h:868, at:900, dir:-1, y:28}, {h:868, at:1150,dir:-1, y:28},
+      // 洗面室・廊下・玄関
+      {h:167, at:860, dir:+1, y:28}, {v:917, at:200, dir:-1, y:105},
+      {h:282, at:250, dir:-1, y:118, sw:true}, {h:167, at:230, dir:+1, y:118, sw:true},
     ];
     plates.forEach(p=>{
-      const isSw=p[4]===1;
-      const w0=isSw?8.5:7, h0=isSw?12:11.5;
-      const geo=(p[2]<2)? new THREE.BoxGeometry(w0,h0,1.2) : new THREE.BoxGeometry(1.2,h0,w0);
-      const m=new THREE.Mesh(geo,plateW);
-      const off=(p[2]===0||p[2]===2)? 0.9 : -0.9;
-      const x=C(p[0])+((p[2]===2)?off:(p[2]===3?-0.9:0));
-      const z=C(p[1])+((p[2]===0)?off:(p[2]===1?-0.9:0));
-      m.position.set(x,p[3],z); g.add(m);
+      const kind=(p.v!=null)?"v":"h";
+      const wl=wallAt(kind, p.v!=null?p.v:p.h); if(!wl) return;
+      const face=wl.c + p.dir*(wl.t/2+0.6);            // 壁の面から0.6cmだけ出す
+      const pw=p.sw?8.5:7, ph=p.sw?12:11.5;
+      const geo=(kind==="v")? new THREE.BoxGeometry(1.2,ph,pw) : new THREE.BoxGeometry(pw,ph,1.2);
+      const m=new THREE.Mesh(geo, p.sw?plateS:plateW);
+      if(kind==="v") m.position.set(face, p.y, C(p.at));
+      else           m.position.set(C(p.at), p.y, face);
+      g.add(m);
+      if(!p.sw) [-2.6,2.6].forEach(dy=>{                // 差込口
+        const hg=(kind==="v")? new THREE.BoxGeometry(0.5,3,3.2) : new THREE.BoxGeometry(3.2,3,0.5);
+        const hm=new THREE.Mesh(hg,holeM);
+        if(kind==="v") hm.position.set(face+p.dir*0.45, p.y+dy, C(p.at));
+        else           hm.position.set(C(p.at), p.y+dy, face+p.dir*0.45);
+        g.add(hm);
+      });
     });
+
 
     fixGroup=g; scene.add(g);
   }
