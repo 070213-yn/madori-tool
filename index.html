@@ -328,6 +328,7 @@
       <button id="btnNewPlan" class="full">＋ 新しいプランを作る</button>
       <button id="btnNamePlan" class="full sub" style="margin-top:6px;">今の配置に名前を付ける</button>
       <button id="btnSaveNow" class="full sub" style="margin-top:6px;">💾 今すぐ保存</button>
+      <button id="btnBackups" class="full sub" style="margin-top:6px;">🕘 バックアップから戻す</button>
       <div id="slotList"></div>
       <button id="btnCompare" class="full sub" style="margin-top:10px;">▦ 並べて比較する</button>
       <div class="hint" id="saveInfo">名前を決めると、以降の変更は自動で保存されます。</div>
@@ -423,6 +424,18 @@
       <div id="v3dPrompt"></div>
       <div id="v3dResume"><div class="msg">クリックするとマウスで見回せます<small>クリックしなくても、矢印キーで見回し・WASDキーで移動できます</small></div></div>
       <div id="v3dLoading"><div class="spin"></div><span>3Dモデルを生成中…（初回はライブラリの読み込みに数秒かかります）</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- バックアップ復元 モーダル -->
+<div id="bkModal" class="modalOverlay">
+  <div class="modalCard" style="width:420px;">
+    <h2>バックアップから戻す</h2>
+    <div class="hint">編集中の配置は自動でバックアップされています。戻したい時点を選んでください。<br>（戻す直前の状態もバックアップされるので、やり直せます）</div>
+    <div id="bkList" style="margin-top:10px; max-height:52vh; overflow-y:auto;"></div>
+    <div class="modalBtns">
+      <button id="bkClose" class="sub" style="flex:1;">閉じる</button>
     </div>
   </div>
 </div>
@@ -882,6 +895,7 @@ floorImg.onload=()=>{
   document.getElementById("scaleNum").value=scaleCmPerPx.toFixed(2);
   updateScaleInfo(); relayoutAll(); renderSlotList();
   booted=true; applyBgMode();
+  backupNow("起動時",true);   // 起動直後の状態を必ず1件残す
  }catch(err){ console.error("起動処理でエラー:", err); }
 };
 // 画像がキャッシュ済みで既に読み込み完了している場合。スクリプト全体の定義が終わってから起動する（定義前アクセスのエラー防止）
@@ -1350,10 +1364,68 @@ function loadFromObj(d){
   updateScaleInfo(); furns.forEach(renderFurn); drawGrid(); refreshOverlap();
 }
 
+// ===== 自動バックアップ（うっかり消えたときに戻せるように）=====
+const BACKUP_KEY="madori_backups_v1", EDITAT_KEY="madori_edit_at";
+var lastLocalEditAt=parseInt(localStorage.getItem(EDITAT_KEY),10)||0;
+var _lastBackupAt=0, _lastBackupJson="";
+function getBackups(){ try{ return JSON.parse(localStorage.getItem(BACKUP_KEY))||[]; }catch(e){ return []; } }
+function writeBackups(list){
+  // 保存領域があふれたら古いものから捨てる
+  let arr=list.slice(-40);
+  for(;;){
+    try{ localStorage.setItem(BACKUP_KEY, JSON.stringify(arr)); return; }
+    catch(e){ if(arr.length<=1) return; arr=arr.slice(Math.ceil(arr.length/2)); }
+  }
+}
+// force=true で、間隔を待たずに必ず1件残す（消える操作の直前に使う）
+function backupNow(label,force){
+  try{
+    if(!booted) return;
+    const json=JSON.stringify(currentLayoutObj());
+    if(json===_lastBackupJson && !force) return;
+    const now=Date.now();
+    if(!force && now-_lastBackupAt<90000) return;   // 通常は90秒に1回まで
+    _lastBackupAt=now; _lastBackupJson=json;
+    const arr=getBackups();
+    arr.push({ at:now, label:label||"", n:(furns||[]).length, plan:currentPlanName||"", data:json });
+    writeBackups(arr);
+  }catch(err){ console.error("バックアップ失敗:",err); }
+}
+function renderBackupList(){
+  const box=document.getElementById("bkList"); if(!box) return;
+  const arr=getBackups().slice().reverse();
+  box.innerHTML="";
+  if(!arr.length){ box.innerHTML=`<div class="hint">まだバックアップがありません。</div>`; return; }
+  arr.forEach(b=>{
+    const row=document.createElement("div"); row.className="slotItem";
+    const d=new Date(b.at);
+    const nm=document.createElement("span"); nm.className="nm";
+    nm.textContent=`${d.toLocaleString()}　家具${b.n}点`+(b.plan?`　（${b.plan}）`:"")+(b.label?`　${b.label}`:"");
+    row.appendChild(nm);
+    const btns=document.createElement("div"); btns.className="btns";
+    const bR=document.createElement("button"); bR.textContent="この状態に戻す";
+    bR.onclick=()=>{
+      if(!confirm(`${d.toLocaleString()} の状態に戻します。よろしいですか？\n（今の状態もバックアップされるので、戻し直せます）`)) return;
+      backupNow("戻す直前",true);
+      try{ loadFromObj(JSON.parse(b.data)); saveWorking(); syncPush(); }
+      catch(err){ console.error(err); alert("復元に失敗しました"); return; }
+      document.getElementById("bkModal").classList.remove("show");
+      document.getElementById("saveInfo").textContent=`${d.toLocaleString()} の状態に戻しました`;
+    };
+    btns.appendChild(bR); row.appendChild(btns); box.appendChild(row);
+  });
+}
+document.getElementById("btnBackups").onclick=()=>{ backupNow("開いた時点",true); renderBackupList(); document.getElementById("bkModal").classList.add("show"); };
+document.getElementById("bkClose").onclick=()=>document.getElementById("bkModal").classList.remove("show");
+document.getElementById("bkModal").addEventListener("mousedown",e=>{ if(e.target.id==="bkModal") e.currentTarget.classList.remove("show"); });
+
 // ----- 作業状態の自動保存（リロードで復元）-----
-function saveWorking(){ localStorage.setItem(LS_KEY, JSON.stringify(currentLayoutObj())); }
+function saveWorking(){
+  localStorage.setItem(LS_KEY, JSON.stringify(currentLayoutObj()));
+  lastLocalEditAt=Date.now(); localStorage.setItem(EDITAT_KEY,String(lastLocalEditAt));
+}
 var _saveTimer=null, remoteApplyAt=0;
-function scheduleSaveWorking(){ notify3DChanged(); clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>{ saveWorking(); autoSaveToCurrentPlan(); if(Date.now()-remoteApplyAt>1200) syncPush(); },400); }
+function scheduleSaveWorking(){ notify3DChanged(); clearTimeout(_saveTimer); _saveTimer=setTimeout(()=>{ saveWorking(); autoSaveToCurrentPlan(); backupNow(); if(Date.now()-remoteApplyAt>1200) syncPush(); },400); }
 function loadLayout(silent){
   const raw=localStorage.getItem(LS_KEY); if(!raw){ if(!silent) alert("保存データがありません"); return; }
   loadFromObj(JSON.parse(raw));
@@ -1391,6 +1463,7 @@ function newPlan(){
   if(!nm) return;
   const slots=getSlots();
   if(slots[nm]){ if(confirm(`「${nm}」は既にあります。そのプランを開きますか？`)) loadSlot(nm); return; }
+  backupNow("新しいプランを作る前",true);
   furns.forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); });
   furns=[]; selectedId=null; document.getElementById("propBox").style.display="none";
   setCurrentPlan(nm); autoSaveToCurrentPlan(); refreshOverlap();
@@ -1405,6 +1478,7 @@ function namePlan(){
 }
 function loadSlot(nm){
   const slots=getSlots(); if(!slots[nm]) return;
+  backupNow("別のプランを開く前",true);
   loadFromObj(slots[nm]); setCurrentPlan(nm); saveWorking();
   document.getElementById("saveInfo").textContent=`「${nm}」を開きました（自動保存）`;
 }
@@ -1623,7 +1697,7 @@ document.getElementById("btnCompare").onclick=openCompare;
 document.getElementById("btnCompareClose").onclick=closeCompare;
 document.getElementById("cmpSize").oninput=()=>{ const dispW=parseInt(document.getElementById("cmpSize").value,10); cmpItems.forEach(it=>{ it.dispW=dispW; if(it.cardEl) it.cardEl.style.width=dispW+"px"; drawCard(it); }); };
 
-document.getElementById("btnClear").onclick=()=>{ if(!confirm("全ての家具を消します。よろしいですか？")) return; furns.forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); }); furns=[]; selectedId=null; document.getElementById("propBox").style.display="none"; refreshOverlap(); };
+document.getElementById("btnClear").onclick=()=>{ if(!confirm("全ての家具を消します。よろしいですか？")) return; backupNow("全クリアの前",true); furns.forEach(f=>{ document.getElementById("furn_"+f.id)?.remove(); document.getElementById("cz_"+f.id)?.remove(); }); furns=[]; selectedId=null; document.getElementById("propBox").style.display="none"; refreshOverlap(); };
 
 // ===== 家具エディタ（モーダル）=====
 let fmEditingKey=null;
@@ -3915,7 +3989,8 @@ function getRoomId(){ const u=new URL(location.href); return (u.searchParams.get
 function syncSanitize(){
   const w=currentLayoutObj();
   (w.furns||[]).forEach(f=>{ delete f._chairBlocked; });
-  return { working:w, slots:getSlots(), customFurn:getCustom(), currentPlan:currentPlanName };
+  return { working:w, slots:getSlots(), customFurn:getCustom(), currentPlan:currentPlanName,
+           savedAt:lastLocalEditAt };   // 新旧を比べるための編集時刻
 }
 function syncPush(){
   if(!fbRoomRef || applyingRemote) return;
@@ -3963,9 +4038,18 @@ function onRemote(data){
   setSyncStatus("接続済み ✓");
   if(!data || !data.json) return;
   if(data.json===lastSyncJson) return;       // 自分が書いた内容は無視
-  lastSyncJson=data.json;
   let st; try{ st=JSON.parse(data.json); }catch(e){ return; }
+  // 届いた内容がこちらより古いときは上書きしない（別のタブや端末の古い状態で
+  // 作業中の配置が消えるのを防ぐ）。代わりにこちらの新しい状態を送り直す。
+  const theirs=st.savedAt||0;
+  if(lastLocalEditAt && theirs && theirs < lastLocalEditAt-2000 && (furns||[]).length){
+    setSyncStatus("こちらが新しいため送信しました");
+    lastSyncJson=null; syncPush();
+    return;
+  }
+  lastSyncJson=data.json;
   if(draggingNow){ pendingRemote=st; return; } // ドラッグ中は中断せず保留
+  backupNow("同期で置き換わる前",true);          // 念のため直前の状態を残す
   applyRemoteFull(st);
 }
 function connectRoom(room){
