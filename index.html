@@ -493,9 +493,9 @@ const PRESETS = [
   { key:"bed_d",  name:"ベッド(ダブル)", w:140, d:198, color:"#b3d4ff" },
   { key:"sofa2",  name:"ソファー(2人)", w:140, d:85, color:"#c9b3ff" },
   { key:"sofa3",  name:"ソファー(3人)", w:200, d:90, color:"#c9b3ff" },
-  // 実物のサイズ表より：全体幅222×奥行159、全体高72（座面高43）、カウチ部は左前130×78
+  // 実物のサイズ表より：全体幅222×奥行159、全体高72（座面高43）、足を伸ばす部分は幅80×奥行78
   { key:"sofa_couch", name:"カウチソファ", w:222, d:159, color:"#ddd6cc", hCm:72,
-    shape:"L", lcorner:"br", lw:92, ld:78 },
+    shape:"L", lcorner:"br", lw:142, ld:78 },
   { key:"dining", name:"ダイニングテーブル", w:120, d:75, color:"#ffd9a8" },
   { key:"desk",   name:"PCデスク", w:120, d:60, color:"#a8e6cf", chair:true },
   { key:"desk_l", name:"PCデスク(大)", w:140, d:70, color:"#a8e6cf", chair:true },
@@ -2984,7 +2984,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const s=h/72;                                  // 高さ方向の倍率
     const legH=14*s, seatH=43*s, armH=66*s;
     const backD=d*(81/159);                        // 背もたれ側の奥行
-    const chaiseW=w*(130/222), chaiseD=d-backD;    // カウチ（左前に張り出す部分）
+    const chaiseW=w*(80/222), chaiseD=d-backD;     // 足を伸ばす部分（幅80×奥行78）
     const armW=Math.max(5,w*(18/222));
     const zBack=-d/2, zMid=-d/2+backD;             // 背面／カウチとの境
     const xL=-w/2;
@@ -2999,7 +2999,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     for(let i=0;i<3;i++){
       bx(g,fab, inW/3-2, 11*s, seatD-2, xL+armW+inW/6+inW/3*i, baseTop+5.5*s, zBack+20*s+seatD/2);
     }
-    bx(g,fab, chaiseW-armW-3, 11*s, chaiseD-2, xL+armW+(chaiseW-armW)/2, baseTop+5.5*s, zMid+chaiseD/2);
+    bx(g,fab, chaiseW-4, 11*s, chaiseD-2, xL+chaiseW/2, baseTop+5.5*s, zMid+chaiseD/2);
     // 背もたれ（わずかに後傾）
     const back=bx(g,base, w-armW*2, (h-seatH), 17*s, 0, seatH+(h-seatH)/2-1.5*s, zBack+9*s);
     back.rotation.x=-0.05;
