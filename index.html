@@ -493,6 +493,9 @@ const PRESETS = [
   { key:"bed_d",  name:"ベッド(ダブル)", w:140, d:198, color:"#b3d4ff" },
   { key:"sofa2",  name:"ソファー(2人)", w:140, d:85, color:"#c9b3ff" },
   { key:"sofa3",  name:"ソファー(3人)", w:200, d:90, color:"#c9b3ff" },
+  // 実物のサイズ表より：全体幅222×奥行159、全体高72（座面高43）、カウチ部は左前130×78
+  { key:"sofa_couch", name:"カウチソファ", w:222, d:159, color:"#ddd6cc", hCm:72,
+    shape:"L", lcorner:"br", lw:92, ld:78 },
   { key:"dining", name:"ダイニングテーブル", w:120, d:75, color:"#ffd9a8" },
   { key:"desk",   name:"PCデスク", w:120, d:60, color:"#a8e6cf", chair:true },
   { key:"desk_l", name:"PCデスク(大)", w:140, d:70, color:"#a8e6cf", chair:true },
@@ -536,6 +539,7 @@ function typeOf(f){
   if(/テレビ|TV/i.test(n)) return "tv";
   if(/棚|収納|シェルフ|本棚|食器|タンス|箪笥|チェスト|ドレッサー/.test(n)) return "shelf";
   if(/ベッド|寝具|布団/.test(n)) return "bed";
+  if(/カウチ|コーナーソファ|L字ソファ/.test(n)) return "couchsofa";
   if(/ソファ/.test(n)) return "sofa";
   if(/デスク|机/.test(n)) return "desk";
   if(/こたつ|ローテーブル|座卓/.test(n)) return "lowtable";
@@ -545,7 +549,7 @@ function typeOf(f){
   if(/壁|障害|柱/.test(n)) return "pillar";
   return "generic";
 }
-const typeH={ rug:3, marbletable:36, plant:130, frame:45, dresser:75, officechair:110, printer:25, printer3d:40, pctower:45, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
+const typeH={ couchsofa:72, rug:3, marbletable:36, plant:130, frame:45, dresser:75, officechair:110, printer:25, printer3d:40, pctower:45, fridge:175, washer:95, tv:40, shelf:178, bed:45, sofa:75, desk:72, lowtable:38, table:70, stool:45, chair:80, pillar:240, generic:70 };
 // 高さを指定していないときの既定の高さ
 function defaultHeight(f,type){
   type=type||typeOf(f);
@@ -553,7 +557,7 @@ function defaultHeight(f,type){
   return typeH[type]||70;
 }
 // 高さを自由に設定できる種類（ベッド・ソファ・椅子は形が複雑なので対象外）
-const HEIGHT_ADJUSTABLE=new Set(["rug","marbletable","plant","frame","dresser","printer","printer3d","pctower","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
+const HEIGHT_ADJUSTABLE=new Set(["couchsofa","rug","marbletable","plant","frame","dresser","printer","printer3d","pctower","shelf","generic","pillar","tv","table","lowtable","desk","fridge","washer"]);
 function canSetHeight(f){
   const t=typeOf(f);
   if(HEIGHT_ADJUSTABLE.has(t)) return true;
@@ -1102,7 +1106,7 @@ function fillPropPanel(f){
   // 置く高さ（棚や机の上に載せる）
   document.getElementById("pBase").value=Math.round(f.baseY||0);
   // ソファのクッション色（左2つ・右1つ）
-  const isSofa=(typeOf(f)==="sofa");
+  const isSofa=(typeOf(f)==="sofa"||typeOf(f)==="couchsofa");
   document.getElementById("pCushRow").style.display=isSofa?"flex":"none";
   if(isSofa){
     const cs=cushionColors(f), base=rgbToHex(f.color);
@@ -2973,6 +2977,54 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     });
   }
 
+  // ===== カウチソファ（L字。背もたれ側＋前に張り出すカウチ）=====
+  // 実物のサイズ表に合わせた比率：幅222 / 奥行159（うち背もたれ側81）/ 高さ72（座面43・脚14）
+  function buildCouchSofa(f,g,H){
+    const w=f.w, d=f.d, h=Math.max(35,H||72);
+    const s=h/72;                                  // 高さ方向の倍率
+    const legH=14*s, seatH=43*s, armH=66*s;
+    const backD=d*(81/159);                        // 背もたれ側の奥行
+    const chaiseW=w*(130/222), chaiseD=d-backD;    // カウチ（左前に張り出す部分）
+    const armW=Math.max(5,w*(18/222));
+    const zBack=-d/2, zMid=-d/2+backD;             // 背面／カウチとの境
+    const xL=-w/2;
+    const base=fMat(f.color,.88,.95), fab=fMat(f.color,1,.95), cush=fMat(f.color,1.07,.96);
+    const leg=new THREE.MeshStandardMaterial({ color:0xc6cbd0, roughness:.25, metalness:.85 });
+    const baseTop=seatH-9*s;
+    // 台座（座面の下）
+    bx(g,base, w-2, baseTop-legH, backD-2, 0, (legH+baseTop)/2, zBack+backD/2);
+    bx(g,base, chaiseW-2, baseTop-legH, chaiseD, xL+chaiseW/2, (legH+baseTop)/2, zMid+chaiseD/2);
+    // 座面クッション（背もたれ側は3枚、カウチ部は1枚）
+    const inW=w-armW*2, seatD=backD-20*s;
+    for(let i=0;i<3;i++){
+      bx(g,fab, inW/3-2, 11*s, seatD-2, xL+armW+inW/6+inW/3*i, baseTop+5.5*s, zBack+20*s+seatD/2);
+    }
+    bx(g,fab, chaiseW-armW-3, 11*s, chaiseD-2, xL+armW+(chaiseW-armW)/2, baseTop+5.5*s, zMid+chaiseD/2);
+    // 背もたれ（わずかに後傾）
+    const back=bx(g,base, w-armW*2, (h-seatH), 17*s, 0, seatH+(h-seatH)/2-1.5*s, zBack+9*s);
+    back.rotation.x=-0.05;
+    // 背クッション3枚（色は個別に指定できる）
+    const cc=cushionColors(f);
+    for(let i=0;i<3;i++){
+      const c=bx(g, cc[i]? fMat(cc[i],1,.96) : cush, inW/3-6, (h-seatH)*0.92, 12*s,
+                 xL+armW+inW/6+inW/3*i, seatH+(h-seatH)*0.5, zBack+22*s);
+      c.rotation.x=-0.17;
+    }
+    // 肘掛け（左右）＋小さな角クッション
+    [-1,1].forEach(sg=>{
+      bx(g,base, armW, armH-legH, backD-2, sg*(w/2-armW/2), (legH+armH)/2, zBack+backD/2);
+      const p=bx(g,cush, 26*s, 26*s, 10*s, sg*(w/2-armW-13*s), seatH+13*s, zBack+24*s);
+      p.rotation.z=sg*0.12; p.rotation.x=-0.2;
+    });
+    // 脚（シルバーのソリ脚）
+    const legPos=[[xL+11, zBack+13],[w/2-11, zBack+13],[w/2-11, zMid-11],
+                  [xL+11, d/2-13],[xL+chaiseW-11, d/2-13],[xL+chaiseW-11, zMid-11]];
+    legPos.forEach(p=>{
+      bx(g,leg, 5, legH, 14, p[0], legH/2, p[1]);
+      bx(g,leg, 5, 2.5, 22, p[0], 1.4, p[1]);            // 接地するソリ部分
+    });
+  }
+
   // ===== 追加の家具 =====
   // 大理石調のローテーブル：厚い天板＋一段内側の本体＋足元の光る台座
   function marbleMat(color,rough){
@@ -3328,9 +3380,10 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
     const g=new THREE.Group();
     const type=typeOf(f);
     const H=heightOf(f,type);   // ユーザーが指定した高さ（未指定なら種類ごとの既定値）
-    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && type!=="plant" && type!=="marbletable" && type!=="rug" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
+    const useExtrude=(f.shape&&f.shape!=="rect"&&f.shape!=="round") && type!=="table" && type!=="stool" && type!=="plant" && type!=="marbletable" && type!=="rug" && type!=="couchsofa" && !(f.shape==="oval"&&(type==="table"||type==="lowtable"));
     if(useExtrude){ buildExtrude(f,g,H); }
     else switch(type){
+      case "couchsofa": buildCouchSofa(f,g,H); break;
       case "rug":    buildRug(f,g,H); break;
       case "marbletable": buildMarbleTable(f,g,H); break;
       case "plant":  buildPlant(f,g,H); break;
@@ -3387,6 +3440,7 @@ function init3DWorld(THREE, PointerLockControls, BGU, SVGLoader){
   // 座れる家具の設定。lz は家具の中心から「正面(▼の向き)」方向へのずらし量、eye は床からの目線高さ
   function sitSpecFor(f,type){
     if(type==="sofa")  return { lz:f.d*0.06, eye:112, name:f.name };
+    if(type==="couchsofa") return { lz:-f.d*0.24, eye:112, name:f.name };   // 背もたれ側に座る
     if(type==="bed")   return { lz:f.d*0.22, eye:116, name:f.name };
     if(type==="chair") return { lz:0,        eye:118, name:f.name };
     if(type==="officechair") return { lz:0,  eye:121, name:f.name };
